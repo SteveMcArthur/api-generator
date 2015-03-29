@@ -1,0 +1,148 @@
+0|empty|
+0|code|_ = require('lodash')
+0|code|{extractOptsAndCallback} = require('extract-opts')
+0|code|{TaskGroup} = require('taskgroup')
+0|code|pathUtil = require('path')
+0|empty|
+0|comment|# Export
+0|inlineClass|module.exports = docpadUtil =
+1|comment|	# Standard Encodings
+1|method|	isStandardEncoding: (encoding) ->
+2|code|		return encoding.toLowerCase() in ['ascii', 'utf8', 'utf-8']
+0|empty|
+1|comment|	# Get Local DocPad Installation Executable
+1|method|	getLocalDocPadExecutable: ->
+2|code|		return pathUtil.join(process.cwd(), 'node_modules', 'docpad', 'bin', 'docpad')
+0|empty|
+1|comment|	# Is Local DocPad Installation
+1|method|	isLocalDocPadExecutable: ->
+2|code|		return docpadUtil.getLocalDocPadExecutable() in process.argv
+0|empty|
+1|comment|	# Does Local DocPad Installation Exist?
+1|method|	getLocalDocPadExecutableExistance: ->
+2|code|		return require('safefs').existsSync(docpadUtil.getLocalDocPadExecutable()) is true
+0|empty|
+1|comment|	# Spawn Local DocPad Executable
+1|method|	startLocalDocPadExecutable: (next) ->
+2|code|		args = process.argv.slice(2)
+2|code|		command = ['node', docpadUtil.getLocalDocPadExecutable()].concat(args)
+2|code|		return require('safeps').spawn command, {stdio:'inherit'}, (err) ->
+3|code|			if err
+4|code|				if next
+5|code|					next(err)
+4|code|				else
+5|code|					message = 'An error occured within the child DocPad instance: '+err.message+'\n'
+5|code|					process.stderr.write(message)
+3|code|			else
+4|code|				next?()
+0|empty|
+1|comment|	# get a filename without the extension
+1|method|	getBasename: (filename) ->
+2|code|		if filename[0] is '.'
+3|code|			basename = filename.replace(/^(\.[^\.]+)\..*$/, '$1')
+2|code|		else
+3|code|			basename = filename.replace(/\..*$/, '')
+2|code|		return basename
+0|empty|
+1|comment|	# get the extensions of a filename
+1|method|	getExtensions: (filename) ->
+2|code|		extensions = filename.split(/\./g).slice(1)
+2|code|		return extensions
+0|empty|
+1|comment|	# get the extension from a bunch of extensions
+1|method|	getExtension: (extensions) ->
+2|code|		unless require('typechecker').isArray(extensions)
+3|code|			extensions = docpadUtil.getExtensions(extensions)
+0|empty|
+2|code|		if extensions.length isnt 0
+3|code|			extension = extensions.slice(-1)[0] or null
+2|code|		else
+3|code|			extension = null
+0|empty|
+2|code|		return extension
+0|empty|
+1|comment|	# get the dir path
+1|method|	getDirPath: (path) ->
+2|code|		return pathUtil.dirname(path) or ''
+0|empty|
+1|comment|	# get filename
+1|method|	getFilename: (path) ->
+2|code|		return pathUtil.basename(path)
+0|empty|
+1|comment|	# get out filename
+1|prop|	getOutFilename: (basename, extension) ->
+2|code|		if basename is '.'+extension  # prevent: .htaccess.htaccess
+3|code|			return basename
+2|code|		else
+3|code|			return basename+(if extension then '.'+extension else '')
+0|empty|
+1|comment|	# get url
+1|method|	getUrl: (relativePath) ->
+2|code|		return '/'+relativePath.replace(/[\\]/g, '/')
+0|empty|
+1|comment|	# get slug
+1|method|	getSlug: (relativeBase) ->
+2|code|		return require('bal-util').generateSlugSync(relativeBase)
+0|empty|
+1|comment|	# Perform an action
+1|comment|	# next(err,...), ... = any special arguments from the action
+1|prop|	action: (action,opts,next) ->
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts,next)
+2|code|		me = @
+2|code|		runner = me.getActionRunner()
+0|empty|
+2|comment|		# Array?
+2|code|		if Array.isArray(action)
+3|code|			actions = action
+2|code|		else
+3|code|			actions = action.split(/[,\s]+/g)
+0|empty|
+2|comment|		# Clean actions
+2|code|		actions = _.uniq _.compact actions
+0|empty|
+2|comment|		# Next
+2|code|		next or= (err) =>
+3|code|			@emit('error', err)  if err
+0|empty|
+2|comment|		# Multiple actions?
+2|code|		if actions.length is 0
+3|code|			err = new Error('No action was given')
+3|code|			next(err)
+3|code|			return me
+0|empty|
+2|code|		else if actions.length > 1
+3|code|			tasks = new TaskGroup('action tasks', {next})
+3|code|			actions.forEach (action) ->
+4|code|				tasks.addTask 'actions completion callback', (complete) ->
+5|code|					me.action(action, opts, complete)
+3|code|			tasks.run()
+3|code|			return me
+0|empty|
+2|comment|		# Fetch the action
+2|code|		action = actions[0]
+0|empty|
+2|comment|		# Fetch
+2|code|		actionMethod = me[action].bind(me)
+0|empty|
+2|comment|		# Check
+2|code|		unless actionMethod
+3|code|			err = new Error(util.format(locale.actionNonexistant, action))
+3|code|			return next(err)
+0|empty|
+2|comment|		# Wrap
+2|code|		runner.addTask 'action completion callback', (complete) ->
+3|code|			# Forward
+3|code|			actionMethod opts, (args...) ->
+4|code|				# Prepare
+4|code|				err = args[0]
+0|empty|
+4|code|				# Continue to our completion callback
+4|code|				next(args...)
+0|empty|
+4|code|				# Continue down the action queue
+4|code|				complete()  # ignore the error
+0|empty|
+2|comment|		# Chain
+2|code|		me
+0|empty|

@@ -1,0 +1,4805 @@
+0|comment|# Requires
+0|empty|
+0|comment|# Essential
+0|code|pathUtil = require('path')
+0|code|{lazyRequire} = require('lazy-require')
+0|code|corePath = pathUtil.resolve(__dirname, '..', '..')
+0|code|setImmediate = global?.setImmediate or process.nextTick  # node 0.8 b/c
+0|empty|
+0|comment|# Profile
+0|code|if ('--profile' in process.argv)
+1|comment|	# Debug
+1|code|	debugger
+0|empty|
+1|comment|	# Nodefly
+1|code|	if process.env.NODEFLY_KEY
+2|code|		console.log 'Loading profiling tool: nodefly'
+2|code|		lazyRequire 'nodefly', {cwd:corePath}, (err,nodefly) ->
+3|code|			return  if err
+3|code|			nodefly.profile(process.env.NODEFLY_KEY, 'docpad')
+3|code|			console.log('Profiling with nodefly')
+0|empty|
+1|comment|	# Nodetime
+1|code|	if process.env.NODETIME_KEY
+2|code|		console.log 'Loading profiling tool: nodetime'
+2|code|		lazyRequire 'nodetime', {cwd:corePath}, (err,nodetime) ->
+3|code|			return  if err
+3|code|			nodetime.profile({
+4|code|				accountKey: process.env.NODETIME_KEY
+4|code|				appName: 'DocPad'
+3|code|			})
+3|code|			console.log('Profiling with nodetime')
+0|empty|
+1|comment|	# Webkit Devtools
+1|code|	console.log 'Loading profiling tool: webkit-devtools-agent'
+1|code|	lazyRequire 'webkit-devtools-agent', {cwd:corePath}, (err) ->
+2|code|		return  if err
+2|code|		console.log("Profiling with webkit-devtools-agent on process id:", process.pid)
+0|empty|
+0|comment|# Necessary
+0|code|_ = require('lodash')
+0|code|CSON = require('cson')
+0|code|balUtil = require('bal-util')
+0|code|extendr = require('extendr')
+0|code|eachr = require('eachr')
+0|code|typeChecker = require('typechecker')
+0|code|ambi = require('ambi')
+0|code|{TaskGroup} = require('taskgroup')
+0|code|safefs = require('safefs')
+0|code|safeps = require('safeps')
+0|code|ignorefs = require('ignorefs')
+0|code|util = require('util')
+0|code|superAgent = require('superagent')
+0|code|{extractOptsAndCallback} = require('extract-opts')
+0|code|{EventEmitterGrouped} = require('event-emitter-grouped')
+0|empty|
+0|comment|# Base
+0|code|{queryEngine,Backbone,Events,Model,Collection,View,QueryCollection} = require('./base')
+0|empty|
+0|comment|# Utils
+0|code|docpadUtil = require('./util')
+0|empty|
+0|comment|# Models
+0|code|FileModel = require('./models/file')
+0|code|DocumentModel = require('./models/document')
+0|empty|
+0|comment|# Collections
+0|code|FilesCollection = require('./collections/files')
+0|code|ElementsCollection = require('./collections/elements')
+0|code|MetaCollection = require('./collections/meta')
+0|code|ScriptsCollection = require('./collections/scripts')
+0|code|StylesCollection = require('./collections/styles')
+0|empty|
+0|comment|# Plugins
+0|code|PluginLoader = require('./plugin-loader')
+0|code|BasePlugin = require('./plugin')
+0|empty|
+0|empty|
+0|comment|# =====================================
+0|comment|# DocPad
+0|empty|
+0|comment|# The DocPad Class
+0|comment|# Extends https://github.com/bevry/event-emitter-grouped
+0|class|class DocPad extends EventEmitterGrouped
+0|empty|
+1|comment|	# =================================
+1|comment|	# Variables
+0|empty|
+1|comment|	# ---------------------------------
+1|comment|	# Modules
+0|empty|
+1|comment|	# Base
+1|prop|	Events: Events
+1|prop|	Model: Model
+1|prop|	Collection: Collection
+1|prop|	View: View
+1|prop|	QueryCollection: QueryCollection
+0|empty|
+1|comment|	# Models
+1|prop|	FileModel: FileModel
+1|prop|	DocumentModel: DocumentModel
+0|empty|
+1|comment|	# Collections
+1|prop|	FilesCollection: FilesCollection
+1|prop|	ElementsCollection: ElementsCollection
+1|prop|	MetaCollection: MetaCollection
+1|prop|	ScriptsCollection: ScriptsCollection
+1|prop|	StylesCollection: StylesCollection
+0|empty|
+1|comment|	# Plugins
+1|prop|	PluginLoader: PluginLoader
+1|prop|	BasePlugin: BasePlugin
+0|empty|
+0|empty|
+1|comment|	# ---------------------------------
+1|comment|	# DocPad
+0|empty|
+1|comment|	# DocPad's version number
+1|prop|	version: null
+0|empty|
+1|method|	getVersion: ->
+2|code|		@version ?= require(@packagePath).version
+2|code|		return @version
+0|empty|
+1|method|	getVersionString: ->
+2|code|		if docpadUtil.isLocalDocPadExecutable()
+3|code|			return util.format(@getLocale().versionLocal, @getVersion(), @corePath)
+2|code|		else
+3|code|			return util.format(@getLocale().versionGlobal, @getVersion(), @corePath)
+0|empty|
+1|comment|	# Plugin version requirements
+1|string|	pluginVersion: '2'
+0|empty|
+1|comment|	# Process getters
+1|inlineMethod|	getProcessPlatform: -> process.platform
+1|inlineMethod|	getProcessVersion: -> process.version.replace(/^v/,'')
+0|empty|
+1|comment|	# The express and http server instances bound to docpad
+1|prop|	serverExpress: null
+1|prop|	serverHttp: null
+1|prop|	getServer: (both=false) ->
+2|code|		{serverExpress,serverHttp} = @
+2|code|		if both
+3|code|			return {serverExpress, serverHttp}
+2|code|		else
+3|code|			return serverExpress
+1|method|	setServer: (servers) ->
+2|comment|		# Apply
+2|code|		if servers.serverExpress and servers.serverHttp
+3|code|			@serverExpress = servers.serverExpress
+3|code|			@serverHttp = servers.serverHttp
+0|empty|
+2|comment|		# Cleanup
+2|code|		delete @config.serverHttp
+2|code|		delete @config.serverExpress
+2|code|		delete @config.server
+1|method|	destroyServer: ->
+2|code|		@serverHttp?.close()
+2|code|		@serverHttp = null
+2|comment|		# @TODO figure out how to destroy the express server
+0|empty|
+1|comment|	# The caterpillar instances bound to docpad
+1|prop|	loggerInstances: null
+1|inlineMethod|	getLogger: -> @loggerInstances?.logger
+1|inlineMethod|	getLoggers: -> @loggerInstances
+1|method|	setLoggers: (loggers) ->
+2|code|		if @loggerInstances
+3|code|			@warn('Loggers have already been set')
+2|code|		else
+3|code|			@loggerInstances = loggers
+3|code|			@loggerInstances.logger.setConfig(dry:true)
+3|code|			@loggerInstances.console.setConfig(dry:false).pipe(process.stdout)
+2|code|		return loggers
+1|method|	destroyLoggers: ->
+2|code|		if @loggerInstances
+3|code|			for own key,value of @loggerInstances
+4|code|				value.end()
+2|code|		@
+0|empty|
+1|comment|	# The action runner instance bound to docpad
+1|prop|	actionRunnerInstance: null
+1|inlineMethod|	getActionRunner: -> @actionRunnerInstance
+1|inlineMethod|	action: (args...) => docpadUtil.action.apply(@, args)
+0|empty|
+1|comment|	# The error runner instance bound to docpad
+1|prop|	errorRunnerInstance: null
+1|inlineMethod|	getErrorRunner: -> @errorRunnerInstance
+0|empty|
+1|comment|	# The track runner instance bound to docpad
+1|prop|	trackRunnerInstance: null
+1|inlineMethod|	getTrackRunner: -> @trackRunnerInstance
+0|empty|
+1|comment|	# Event Listing
+1|comment|	# Whenever a event is created, it must be applied here to be available to plugins and configuration files
+1|comment|	# https://github.com/bevry/docpad/wiki/Events
+1|events|	events: [
+2|event|		'extendTemplateData'           # fired each load
+2|event|		'extendCollections'            # fired each load
+2|event|		'docpadLoaded'                 # fired multiple times, first time command line configuration hasn't been applied yet
+2|event|		'docpadReady'                  # fired only once
+2|event|		'docpadDestroy'                # fired once on shutdown
+2|event|		'consoleSetup'                 # fired once
+2|event|		'generateBefore'
+2|event|		'populateCollectionsBefore'
+2|event|		'populateCollections'
+2|event|		'contextualizeBefore'
+2|event|		'contextualizeAfter'
+2|event|		'renderBefore'
+2|event|		'renderCollectionBefore'
+2|event|		'render'                       # fired for each extension conversion
+2|event|		'renderDocument'               # fired for each document render, including layouts and render passes
+2|event|		'renderCollectionAfter'
+2|event|		'renderAfter'
+2|event|		'writeBefore'
+2|event|		'writeAfter'
+2|event|		'generateAfter'
+2|event|		'generated'
+2|event|		'serverBefore'
+2|event|		'serverExtend'
+2|event|		'serverAfter'
+2|event|		'notify'
+1|empty|	]
+1|method|	getEvents: ->
+2|code|		@events
+0|empty|
+0|empty|
+1|comment|	# ---------------------------------
+1|comment|	# Collections
+0|empty|
+1|comment|	# Database collection
+1|prop|	database: null  # QueryEngine Collection
+1|prop|	databaseTempCache: null
+1|inlineMethod|	getDatabase: -> @database
+1|inlineMethod|	getDatabaseSafe: -> @databaseTempCache or @database
+1|method|	destroyDatabase: ->
+2|code|		if @database?
+3|code|			@database.destroy()
+3|code|			@database = null
+2|code|		if @databaseTempCache?
+3|code|			@databaseTempCache.destroy()
+3|code|			@databaseTempCache = null
+2|code|		@
+0|empty|
+1|comment|	# Files by URL
+1|comment|	# Used to speed up fetching
+1|prop|	filesByUrl: null
+0|empty|
+1|comment|	# Files by Selector
+1|comment|	# Used to speed up fetching
+1|prop|	filesBySelector: null
+0|empty|
+1|comment|	# Files by Out Path
+1|comment|	# Used to speed up conflict detection
+1|comment|	# Do not use for anything else
+1|prop|	filesByOutPath: null
+0|empty|
+1|comment|	# Blocks
+1|prop|	blocks: null
+1|comment|	### {
+2|comment|		# A collection of meta elements
+2|prop|		meta: null  # Elements Collection
+0|empty|
+2|comment|		# A collection of script elements
+2|prop|		scripts: null  # Scripts Collection
+0|empty|
+2|comment|		# Collection of style elements
+2|prop|		styles: null  # Styles Collection
+1|code|	} ###
+0|empty|
+1|comment|	# Get a block
+1|prop|	getBlock: (name,clone) ->
+2|code|		block = @blocks[name]
+2|code|		if clone
+3|code|			classname = name[0].toUpperCase()+name[1..]+'Collection'
+3|code|			block = new @[classname](block.models)
+2|code|		return block
+0|empty|
+1|comment|	#  Set a block
+1|prop|	setBlock: (name,value) ->
+2|code|		if @blocks[name]?
+3|code|			@blocks[name].destroy()
+3|code|			if value
+4|code|				@blocks[name] = value
+3|code|			else
+4|code|				delete @blocks[name]
+2|code|		else
+3|code|			@blocks[name] = value
+2|code|		@
+0|empty|
+1|comment|	#  Get blocks
+1|inlineMethod|	getBlocks: -> @blocks
+0|empty|
+1|comment|	#  Set blocks
+1|method|	setBlocks: (blocks) ->
+2|code|		for own name,value of blocks
+3|code|			@setBlock(name,value)
+2|code|		@
+0|empty|
+1|comment|	# Each block
+1|method|	eachBlock: (fn) ->
+2|code|		eachr(@blocks, fn)
+2|code|		@
+0|empty|
+1|comment|	# Destroy Blocks
+1|method|	destroyBlocks: ->
+2|code|		if @blocks
+3|code|			for own name,block of @blocks
+4|code|				block.destroy()
+4|code|				@blocks[name] = null
+2|code|		@
+0|empty|
+1|comment|	# Collections
+1|prop|	collections: null
+0|empty|
+1|comment|	# Get a collection
+1|method|	getCollection: (value) ->
+2|code|		if value
+3|code|			if typeof value is 'string'
+4|code|				if value is 'database'
+5|code|					return @getDatabase()
+0|empty|
+4|code|				else
+5|code|					for collection in @collections
+5|code|						if value in [collection.options.name, collection.options.key]
+5|code|							return collection
+0|empty|
+3|code|			else
+4|code|				for collection in @collections
+5|code|					if value is collection
+5|code|						return collection
+0|empty|
+2|code|		return null
+0|empty|
+1|comment|	# Get a collection
+1|method|	destroyCollection: (value) ->
+2|code|		if value
+3|code|			if typeof value is 'string' and value isnt 'database'
+4|code|				@collections = @collections.filter (collection) ->
+5|code|					if value in [collection.options.name, collection.options.key]
+5|code|						collection?.destroy()
+5|code|						return false
+5|code|					else
+5|code|						return true
+0|empty|
+3|code|			else if value isnt @getDatabase()
+4|code|				@collections = @collections.filter (collection) ->
+5|code|					if value is collection
+5|code|						collection?.destroy()
+5|code|						return false
+5|code|					else
+5|code|						return true
+0|empty|
+2|code|		return null
+0|empty|
+1|comment|	# Add a collection
+1|method|	addCollection: (collection) ->
+2|code|		if collection and collection not in [@getDatabase(), @getCollection(collection)]
+3|code|			@collections.push(collection)
+2|code|		@
+0|empty|
+1|comment|	# Set a collection
+1|comment|	# A collection can have multiple names
+1|prop|	setCollection: (name, collection) ->
+2|code|		if collection
+3|code|			if name
+4|code|				collection.options.name = name
+4|code|				if @getCollection(name) isnt collection
+5|code|					@destroyCollection(name)
+3|code|			@addCollection(collection)
+2|code|		else
+3|code|			@destroyCollection(name)
+0|empty|
+1|comment|	# Get collections
+1|method|	getCollections: ->
+2|code|		return @collections
+0|empty|
+1|comment|	# Set collections
+1|method|	setCollections: (collections) ->
+2|code|		if Array.isArray(collections)
+3|code|			for value in collections
+4|code|				@addCollection(value)
+2|code|		else
+3|code|			for own name,value of collections
+4|code|				@setCollection(name, value)
+2|code|		@
+0|empty|
+1|comment|	# Each collection
+1|method|	eachCollection: (fn) ->
+2|code|		fn(@getDatabase(), 'database')
+2|code|		for collection,index in @collections
+3|code|			fn(collection, collection.options.name or collection.options.key or index)
+2|code|		@
+0|empty|
+1|comment|	# Destroy Collections
+1|method|	destroyCollections: ->
+2|code|		if @collections
+3|code|			for collection in @collections
+4|code|				collection.destroy()
+3|code|			@collections = []
+2|code|		@
+0|empty|
+0|empty|
+1|comment|	# ---------------------------------
+1|comment|	# Collection Helpers
+0|empty|
+1|comment|	# Get files (will use live collections)
+1|prop|	getFiles: (query,sorting,paging) ->
+2|code|		key = JSON.stringify({query, sorting, paging})
+2|code|		collection = @getCollection(key)
+2|code|		unless collection
+3|code|			collection = @getDatabase().findAllLive(query, sorting, paging)
+3|code|			collection.options.key = key
+3|code|			@addCollection(collection)
+2|code|		return collection
+0|empty|
+1|comment|	# Get a single file based on a query
+1|prop|	getFile: (query,sorting,paging) ->
+2|code|		file = @getDatabase().findOne(query, sorting, paging)
+2|code|		return file
+0|empty|
+1|comment|	# Get files at a path
+1|prop|	getFilesAtPath: (path,sorting,paging) ->
+2|code|		query = $or: [{relativePath: $startsWith: path}, {fullPath: $startsWith: path}]
+2|code|		files = @getFiles(query, sorting, paging)
+2|code|		return files
+0|empty|
+1|comment|	# Get a file at a relative or absolute path or url
+1|prop|	getFileAtPath: (path,sorting,paging) ->
+2|code|		file = @getDatabase().fuzzyFindOne(path, sorting, paging)
+2|code|		return file
+0|empty|
+1|comment|	# Get a file by its url
+1|comment|	# TODO: Does this still work???
+1|prop|	getFileByUrl: (url,opts={}) ->
+2|code|		opts.collection ?= @getDatabase()
+2|code|		file = opts.collection.get(@filesByUrl[url])
+2|code|		return file
+0|empty|
+1|comment|	# Get a file by its id
+1|prop|	getFileById: (id,opts={}) ->
+2|code|		opts.collection ?= @getDatabase()
+2|code|		file = opts.collection.get(id)
+2|code|		return file
+0|empty|
+1|comment|	# Remove the query string from a url
+1|comment|	# Pathname convention taken from document.location.pathname
+1|method|	getUrlPathname: (url) ->
+2|code|		 return url.replace(/\?.*/,'')
+0|empty|
+1|comment|	# Get a file by its route
+1|comment|	# next(err,file)
+1|prop|	getFileByRoute: (url,next) ->
+2|comment|		# Prepare
+2|code|		docpad = @
+0|empty|
+2|comment|		# If we have not performed a generation yet then wait until the initial generation has completed
+2|code|		if docpad.generated is false
+3|code|			# Wait until generation has completed and recall ourselves
+3|code|			docpad.once 'generated', ->
+4|code|				return docpad.getFileByRoute(url, next)
+0|empty|
+3|code|			# hain
+3|code|			return @
+0|empty|
+2|comment|		# @TODO the above causes a signifcant delay when importing external documents (like tumblr data) into the database
+2|comment|		# we need to figure out a better way of doing this
+2|comment|		# perhaps it is via `writeSource: once` for imported documents
+2|comment|		# or providing an option to disable this so it forward onto the static handler instead
+0|empty|
+2|comment|		# Prepare
+2|code|		database = docpad.getDatabaseSafe()
+0|empty|
+2|comment|		# Fetch
+2|code|		cleanUrl = docpad.getUrlPathname(url)
+2|code|		file = docpad.getFileByUrl(url, {collection:database}) or docpad.getFileByUrl(cleanUrl, {collection:database})
+0|empty|
+2|comment|		# Forward
+2|code|		next(null, file)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Get a file by its selector
+1|comment|	# TODO: What on earth is a selector?
+1|prop|	getFileBySelector: (selector,opts={}) ->
+2|code|		opts.collection ?= @getDatabase()
+2|code|		file = opts.collection.get(@filesBySelector[selector])
+2|code|		unless file
+3|code|			file = opts.collection.fuzzyFindOne(selector)
+3|code|			if file
+4|code|				@filesBySelector[selector] = file.id
+2|code|		return file
+0|empty|
+0|empty|
+1|comment|	# ---------------------------------
+1|comment|	# Skeletons
+0|empty|
+1|comment|	# Skeletons Collection
+1|prop|	skeletonsCollection: null
+0|empty|
+1|comment|	# Get Skeletons
+1|comment|	# Get all the available skeletons for us and their details
+1|comment|	# next(err,skeletonsCollection)
+1|method|	getSkeletons: (next) ->
+2|comment|		# Prepare
+2|code|		docpad = @
+2|code|		locale = @getLocale()
+0|empty|
+2|comment|		# Check if we have cached locally
+2|code|		if @skeletonsCollection?
+3|code|			return next(null,@skeletonsCollection)
+0|empty|
+2|comment|		# Fetch the skeletons from the exchange
+2|code|		@skeletonsCollection = new Collection()
+2|code|		@skeletonsCollection.comparator = queryEngine.generateComparator(position:1, name:1)
+2|code|		@getExchange (err,exchange) ->
+3|code|			# Check
+3|code|			return next(err)  if err
+0|empty|
+3|code|			# Prepare
+3|code|			index = 0
+0|empty|
+3|code|			# If we have the exchange data, then add the skeletons from it
+3|code|			if exchange
+4|code|				for own skeletonKey,skeleton of exchange.skeletons
+5|code|					skeleton.id ?= skeletonKey
+5|code|					skeleton.name ?= skeletonKey
+5|code|					skeleton.position ?= index
+5|code|					docpad.skeletonsCollection.add(new Model(skeleton))
+5|code|					++index
+0|empty|
+3|code|			# Add No Skeleton Option
+3|code|			docpad.skeletonsCollection.add(new Model(
+4|code|				id: 'none'
+4|code|				name: locale.skeletonNoneName
+4|code|				description: locale.skeletonNoneDescription
+4|code|				position: index
+3|code|			))
+0|empty|
+3|code|			# Return Collection
+3|code|			return next(null, docpad.skeletonsCollection)
+2|code|		@
+0|empty|
+0|empty|
+1|comment|	# ---------------------------------
+1|comment|	# Plugins
+0|empty|
+1|comment|	# Plugins that are loading really slow
+1|prop|	slowPlugins: null  # {}
+0|empty|
+1|comment|	# Loaded plugins indexed by name
+1|prop|	loadedPlugins: null  # {}
+0|empty|
+1|comment|	# A listing of all the available extensions for DocPad
+1|prop|	exchange: null  # {}
+0|empty|
+0|empty|
+1|comment|	# -----------------------------
+1|comment|	# Paths
+0|empty|
+1|comment|	# The DocPad directory
+1|prop|	corePath: corePath
+0|empty|
+1|comment|	# The DocPad library directory
+1|prop|	libPath: __dirname
+0|empty|
+1|comment|	# The main DocPad file
+1|prop|	mainPath: pathUtil.resolve(__dirname, 'docpad')
+0|empty|
+1|comment|	# The DocPad package.json path
+1|prop|	packagePath: pathUtil.resolve(__dirname, '..', '..', 'package.json')
+0|empty|
+1|comment|	# The DocPad locale path
+1|prop|	localePath: pathUtil.resolve(__dirname, '..', '..', 'locale')
+0|empty|
+1|comment|	# The DocPad debug log path
+1|prop|	debugLogPath: pathUtil.join(process.cwd(), 'docpad-debug.log')
+0|empty|
+1|comment|	# The User's configuration path
+1|string|	userConfigPath: '.docpad.cson'
+0|empty|
+0|empty|
+0|empty|
+0|empty|
+1|comment|	# -----------------------------
+1|comment|	# Template Data
+0|empty|
+1|comment|	# DocPad's Template Data
+1|prop|	initialTemplateData: null  # {}
+0|empty|
+1|comment|	# Plugin's Extended Template Data
+1|prop|	pluginsTemplateData: null  # {}
+0|empty|
+1|comment|	# Get Complete Template Data
+1|method|	getTemplateData: (userTemplateData) ->
+2|comment|		# Prepare
+2|code|		userTemplateData or= {}
+2|code|		docpad = @
+2|code|		locale = @getLocale()
+0|empty|
+2|comment|		# Set the initial docpad template data
+2|code|		@initialTemplateData ?=
+3|code|			# Site Properties
+3|code|			site: {}
+0|empty|
+3|code|			# Environment
+3|code|			getEnvironment: ->
+4|code|				return docpad.getEnvironment()
+0|empty|
+3|code|			# Environments
+3|code|			getEnvironments: ->
+4|code|				return docpad.getEnvironments()
+0|empty|
+3|code|			# Set that we reference other files
+3|code|			referencesOthers: (flag) ->
+4|code|				document = @getDocument()
+4|code|				document.referencesOthers()
+4|code|				return null
+0|empty|
+3|code|			# Get the Document
+3|code|			getDocument: ->
+4|code|				return @documentModel
+0|empty|
+3|code|			# Get a Path in respect to the current document
+3|code|			getPath: (path,parentPath) ->
+4|code|				document = @getDocument()
+4|code|				path = document.getPath(path, parentPath)
+4|code|				return path
+0|empty|
+3|code|			# Get Files
+3|code|			getFiles: (query,sorting,paging) ->
+4|code|				@referencesOthers()
+4|code|				result = docpad.getFiles(query, sorting, paging)
+4|code|				return result
+0|empty|
+3|code|			# Get another file's URL based on a relative path
+3|code|			getFile: (query,sorting,paging) ->
+4|code|				@referencesOthers()
+4|code|				result = docpad.getFile(query,sorting,paging)
+4|code|				return result
+0|empty|
+3|code|			# Get Files At Path
+3|code|			getFilesAtPath: (path,sorting,paging) ->
+4|code|				@referencesOthers()
+4|code|				path = @getPath(path)
+4|code|				result = docpad.getFilesAtPath(path, sorting, paging)
+4|code|				return result
+0|empty|
+3|code|			# Get another file's model based on a relative path
+3|code|			getFileAtPath: (relativePath) ->
+4|code|				@referencesOthers()
+4|code|				path = @getPath(relativePath)
+4|code|				result = docpad.getFileAtPath(path)
+4|code|				return result
+0|empty|
+3|code|			# Get a specific file by its id
+3|code|			getFileById: (id) ->
+4|code|				@referencesOthers()
+4|code|				result = docpad.getFileById(id)
+4|code|				return result
+0|empty|
+3|code|			# Get the entire database
+3|code|			getDatabase: ->
+4|code|				@referencesOthers()
+4|code|				return docpad.getDatabase()
+0|empty|
+3|code|			# Get a pre-defined collection
+3|code|			getCollection: (name) ->
+4|code|				@referencesOthers()
+4|code|				return docpad.getCollection(name)
+0|empty|
+3|code|			# Get a block
+3|code|			getBlock: (name) ->
+4|code|				return docpad.getBlock(name,true)
+0|empty|
+3|code|			# Include another file taking in a relative path
+3|code|			include: (subRelativePath,strict=true) ->
+4|code|				file = @getFileAtPath(subRelativePath)
+4|code|				if file
+5|code|					if strict and file.get('rendered') is false
+5|code|						if docpad.getConfig().renderPasses is 1
+5|code|							docpad.warn util.format(locale.renderedEarlyViaInclude, subRelativePath)
+5|code|						return null
+5|code|					return file.getOutContent()
+4|code|				else
+5|code|					err = new Error(util.format(locale.includeFailed, subRelativePath))
+5|code|					throw err
+0|empty|
+2|comment|		# Fetch our result template data
+2|code|		templateData = extendr.extend({}, @initialTemplateData, @pluginsTemplateData, @getConfig().templateData, userTemplateData)
+0|empty|
+2|comment|		# Add site data
+2|code|		templateData.site.url or= 'http://'+(docpad.getHostname() or 'localhost')+':'+(docpad.getPort())
+2|code|		templateData.site.date or= new Date()
+2|code|		templateData.site.keywords or= []
+2|code|		if typeChecker.isString(templateData.site.keywords)
+3|code|			templateData.site.keywords = templateData.site.keywords.split(/,\s*/g)
+0|empty|
+2|comment|		# Return
+2|code|		templateData
+0|empty|
+0|empty|
+1|comment|	# -----------------------------
+1|comment|	# Locales
+0|empty|
+1|comment|	# Determined locale
+1|prop|	locale: null
+0|empty|
+1|comment|	# Get Locale
+1|method|	getLocale: ->
+2|code|		if @locale? is false
+3|code|			config = @getConfig()
+3|code|			codes = _.uniq [
+4|code|				'en'
+4|code|				safeps.getLanguageCode config.localeCode
+4|code|				safeps.getLanguageCode safeps.getLocaleCode()
+4|code|				safeps.getLocaleCode   config.localeCode
+4|code|				safeps.getLocaleCode   safeps.getLocaleCode()
+3|code|			]
+3|code|			locales = (@loadLocale(code)  for code in codes)
+3|code|			@locale = extendr.extend(locales...)
+0|empty|
+2|code|		return @locale
+0|empty|
+1|comment|	# Load Locale
+1|method|	loadLocale: (code) ->
+2|code|		localePath = pathUtil.join(@localePath, "#{code}.cson")
+2|code|		return null  unless safefs.existsSync(localePath)
+2|code|		locale = CSON.parseFileSync(localePath)
+2|code|		return locale
+0|empty|
+0|empty|
+1|comment|	# -----------------------------
+1|comment|	# Environments
+0|empty|
+1|comment|	# Get Environment
+1|method|	getEnvironment: ->
+2|code|		env = @getConfig().env or 'development'
+2|code|		return env
+0|empty|
+1|comment|	# Get Environments
+1|method|	getEnvironments: ->
+2|code|		env = @getEnvironment()
+2|code|		envs = env.split(/[, ]+/)
+2|code|		return envs
+0|empty|
+0|empty|
+1|comment|	# -----------------------------
+1|comment|	# Configuration
+0|empty|
+1|comment|	# Hash Key
+1|comment|	# The key that we use to hash some data before sending it to our statistic server
+1|string|	hashKey: '7>9}$3hP86o,4=@T'  # const
+0|empty|
+1|comment|	# Website Package Configuration
+1|prop|	websitePackageConfig: null  # {}
+0|empty|
+1|comment|	# Merged Configuration
+1|comment|	# Merged in the order of:
+1|comment|	# - initialConfig
+1|comment|	# - userConfig
+1|comment|	# - websiteConfig
+1|comment|	# - instanceConfig
+1|comment|	# - environmentConfig
+1|prop|	config: null  # {}
+0|empty|
+1|comment|	# Instance Configuration
+1|prop|	instanceConfig: null  # {}
+0|empty|
+1|comment|	# Website Configuration
+1|prop|	websiteConfig: null  # {}
+0|empty|
+1|comment|	# User Configuraiton
+1|prop|	userConfig:
+2|comment|		# Name
+2|prop|		name: null
+0|empty|
+2|comment|		# Email
+2|prop|		email: null
+0|empty|
+2|comment|		# Username
+2|prop|		username: null
+0|empty|
+2|comment|		# Subscribed
+2|prop|		subscribed: null
+0|empty|
+2|comment|		# Subcribe Try Again
+2|comment|		# If our subscription has failed, when should we try again?
+2|prop|		subscribeTryAgain: null
+0|empty|
+2|comment|		# Terms of Service
+2|prop|		tos: null
+0|empty|
+2|comment|		# Identified
+2|prop|		identified: null
+0|empty|
+1|comment|	# Initial Configuration
+1|prop|	initialConfig:
+0|empty|
+2|comment|		# -----------------------------
+2|comment|		# Plugins
+0|empty|
+2|comment|		# Force re-install of all plugin dependencies
+2|prop|		force: false
+0|empty|
+2|comment|		# Whether or not we should use the global docpad instance
+2|prop|		global: false
+0|empty|
+2|comment|		# Whether or not we should enable plugins that have not been listed or not
+2|prop|		enableUnlistedPlugins: true
+0|empty|
+2|comment|		# Plugins which should be enabled or not pluginName: pluginEnabled
+2|prop|		enabledPlugins: {}
+0|empty|
+2|comment|		# Whether or not we should skip unsupported plugins
+2|prop|		skipUnsupportedPlugins: true
+0|empty|
+2|comment|		# Configuration to pass to any plugins pluginName: pluginConfiguration
+2|prop|		plugins: {}
+0|empty|
+2|comment|		# Where to fetch the exchange information from
+2|string|		exchangeUrl: 'http://docpad.org/exchange.json'
+0|empty|
+0|empty|
+2|comment|		# -----------------------------
+2|comment|		# Project Paths
+0|empty|
+2|comment|		# The project directory
+2|prop|		rootPath: process.cwd()
+0|empty|
+2|comment|		# The project's database cache path
+2|string|		databaseCachePath: '.docpad.db'
+0|empty|
+2|comment|		# The project's package.json path
+2|string|		packagePath: 'package.json'
+0|empty|
+2|comment|		# Where to get the latest package information from
+2|string|		latestPackageUrl: 'http://docpad.org/latest.json'
+0|empty|
+2|comment|		# The project's configuration paths
+2|comment|		# Reads only the first one that exists
+2|comment|		# If you want to read multiple configuration paths, then point it to a coffee|js file that requires
+2|comment|		# the other paths you want and exports the merged config
+2|prop|		configPaths: [
+3|code|			'docpad.js'
+3|code|			'docpad.coffee'
+3|code|			'docpad.json'
+3|code|			'docpad.cson'
+2|code|		]
+0|empty|
+2|comment|		# Plugin directories to load
+2|array|		pluginPaths: []
+0|empty|
+2|comment|		# The project's plugins directory
+2|prop|		pluginsPaths: [
+3|code|			'node_modules'
+3|code|			'plugins'
+2|code|		]
+0|empty|
+2|comment|		# Paths that we should watch for reload changes in
+2|array|		reloadPaths: []
+0|empty|
+2|comment|		# Paths that we should watch for regeneration changes in
+2|array|		regeneratePaths: []
+0|empty|
+2|comment|		# The time to wait after a source file has changed before using it to regenerate
+2|number|		regenerateDelay: 100
+0|empty|
+2|comment|		# The time to wait before outputting the files we are waiting on
+2|number|		slowFilesDelay: 20*1000
+0|empty|
+2|comment|		# The project's out directory
+2|string|		outPath: 'out'
+0|empty|
+2|comment|		# The project's src directory
+2|string|		srcPath: 'src'
+0|empty|
+2|comment|		# The project's documents directories
+2|comment|		# relative to the srcPath
+2|prop|		documentsPaths: [
+3|code|			'documents'
+3|code|			'render'
+2|code|		]
+0|empty|
+2|comment|		# The project's files directories
+2|comment|		# relative to the srcPath
+2|prop|		filesPaths: [
+3|code|			'files'
+3|code|			'static'
+3|code|			'public'
+2|code|		]
+0|empty|
+2|comment|		# The project's layouts directory
+2|comment|		# relative to the srcPath
+2|prop|		layoutsPaths: [
+3|code|			'layouts'
+2|code|		]
+0|empty|
+2|comment|		# Ignored file patterns during directory parsing
+2|prop|		ignorePaths: false
+2|prop|		ignoreHiddenFiles: false
+2|prop|		ignoreCommonPatterns: true
+2|prop|		ignoreCustomPatterns: false
+0|empty|
+2|comment|		# Watch options
+2|prop|		watchOptions: null
+0|empty|
+0|empty|
+2|comment|		# -----------------------------
+2|comment|		# Server
+0|empty|
+2|comment|		# Port
+2|comment|		# The port that the server should use
+2|comment|		# Defaults to these environment variables:
+2|comment|		# - PORT — Heroku, Nodejitsu, Custom
+2|comment|		# - VCAP_APP_PORT — AppFog
+2|comment|		# - VMC_APP_PORT — CloudFoundry
+2|prop|		port: null
+0|empty|
+2|comment|		# Hostname
+2|comment|		# The hostname we wish to listen to
+2|comment|		# Defaults to these environment variables:
+2|comment|		# HOSTNAME — Generic
+2|comment|		# Do not set to "localhost" it does not work on heroku
+2|prop|		hostname: null
+0|empty|
+2|comment|		# Max Age
+2|comment|		# The caching time limit that is sent to the client
+2|number|		maxAge: 86400000
+0|empty|
+2|comment|		# Server
+2|comment|		# The Express.js server that we want docpad to use
+2|prop|		serverExpress: null
+2|comment|		# The HTTP server that we want docpad to use
+2|prop|		serverHttp: null
+0|empty|
+2|comment|		# Extend Server
+2|comment|		# Whether or not we should extend the server with extra middleware and routing
+2|prop|		extendServer: true
+0|empty|
+2|comment|		# Which middlewares would you like us to activate
+2|comment|		# The standard middlewares (bodyParser, methodOverride, express router)
+2|prop|		middlewareStandard: true
+2|comment|		# The standard bodyParser middleware
+2|prop|		middlewareBodyParser: true
+2|comment|		# The standard methodOverride middleware
+2|prop|		middlewareMethodOverride: true
+2|comment|		# The standard express router middleware
+2|prop|		middlewareExpressRouter: true
+2|comment|		# Our own 404 middleware
+2|code|		middleware404: true
+2|comment|		# Our own 500 middleware
+2|code|		middleware500: true
+0|empty|
+0|empty|
+2|comment|		# -----------------------------
+2|comment|		# Logging
+0|empty|
+2|comment|		# Log Level
+2|comment|		# Which level of logging should we actually output
+2|prop|		logLevel: (if ('-d' in process.argv) then 7 else 6)
+0|empty|
+2|comment|		# Catch uncaught exceptions
+2|prop|		catchExceptions: true
+0|empty|
+2|comment|		# Report Errors
+2|comment|		# Whether or not we should report our errors back to DocPad
+2|comment|		# By default it is only enabled if we are not running inside a test
+2|prop|		reportErrors: process.argv.join('').indexOf('test') is -1
+0|empty|
+2|comment|		# Report Statistics
+2|comment|		# Whether or not we should report statistics back to DocPad
+2|comment|		# By default it is only enabled if we are not running inside a test
+2|prop|		reportStatistics: process.argv.join('').indexOf('test') is -1
+0|empty|
+0|empty|
+2|comment|		# -----------------------------
+2|comment|		# Other
+0|empty|
+2|comment|		# Utilise the database cache
+2|prop|		databaseCache: false  # [false, true, 'write']
+0|empty|
+2|comment|		# Detect Encoding
+2|comment|		# Should we attempt to auto detect the encoding of our files?
+2|comment|		# Useful when you are using foreign encoding (e.g. GBK) for your files
+2|prop|		detectEncoding: false
+0|empty|
+2|comment|		# Render Single Extensions
+2|comment|		# Whether or not we should render single extensions by default
+2|prop|		renderSingleExtensions: false
+0|empty|
+2|comment|		# Render Passes
+2|comment|		# How many times should we render documents that reference other documents?
+2|prop|		renderPasses: 1
+0|empty|
+2|comment|		# Offline
+2|comment|		# Whether or not we should run in offline mode
+2|comment|		# Offline will disable the following:
+2|comment|		# - checkVersion
+2|comment|		# - reportErrors
+2|comment|		# - reportStatistics
+2|prop|		offline: false
+0|empty|
+2|comment|		# Check Version
+2|comment|		# Whether or not to check for newer versions of DocPad
+2|prop|		checkVersion: false
+0|empty|
+2|comment|		# Welcome
+2|comment|		# Whether or not we should display any custom welcome callbacks
+2|prop|		welcome: false
+0|empty|
+2|comment|		# Prompts
+2|comment|		# Whether or not we should display any prompts
+2|prop|		prompts: false
+0|empty|
+2|comment|		# Powered By DocPad
+2|comment|		# Whether or not we should include DocPad in the Powered-By meta header
+2|comment|		# Please leave this enabled as it is a standard practice and promotes DocPad in the web eco-system
+2|prop|		poweredByDocPad: true
+0|empty|
+2|comment|		# Helper Url
+2|comment|		# Used for subscribing to newsletter, account information, and statistics etc
+2|comment|		# Helper's source-code can be found at: https://github.com/bevry/docpad-helper
+2|prop|		helperUrl: if true then 'http://docpad-helper.herokuapp.com/' else 'http://localhost:8000/'
+0|empty|
+2|comment|		# Safe Mode
+2|comment|		# If enabled, we will try our best to sandbox our template rendering so that they cannot modify things outside of them
+2|comment|		# Not yet implemented
+2|prop|		safeMode: false
+0|empty|
+2|comment|		# Template Data
+2|comment|		# What data would you like to expose to your templates
+2|prop|		templateData: {}
+0|empty|
+2|comment|		# Collections
+2|comment|		# A hash of functions that create collections
+2|prop|		collections: {}
+0|empty|
+2|comment|		# Events
+2|comment|		# A hash of event handlers
+2|prop|		events: {}
+0|empty|
+2|comment|		# Regenerate Every
+2|comment|		# Performs a regenerate every x milliseconds, useful for always having the latest data
+2|prop|		regenerateEvery: false
+0|empty|
+2|comment|		# Regerenate Every Options
+2|comment|		# The generate options to use on the regenerate every call
+2|prop|		regenerateEveryOptions:
+3|code|			populate: true
+3|code|			partial:  false
+0|empty|
+0|empty|
+2|comment|		# -----------------------------
+2|comment|		# Environment Configuration
+0|empty|
+2|comment|		# Locale Code
+2|comment|		# The code we shall use for our locale (e.g. en, fr, etc)
+2|prop|		localeCode: null
+0|empty|
+2|comment|		# Environment
+2|comment|		# Whether or not we are in production or development
+2|comment|		# Separate environments using a comma or a space
+2|prop|		env: null
+0|empty|
+2|comment|		# Environments
+2|comment|		# Environment specific configuration to over-ride the global configuration
+2|prop|		environments:
+3|code|			development:
+4|code|				# Always refresh from server
+4|code|				maxAge: false
+0|empty|
+4|code|				# Only do these if we are running standalone (aka not included in a module)
+4|code|				checkVersion: /docpad$/.test(process.argv[1] or '')
+4|code|				welcome: /docpad$/.test(process.argv[1] or '')
+4|code|				prompts: /docpad$/.test(process.argv[1] or '')
+0|empty|
+0|empty|
+1|comment|	# Regenerate Timer
+1|comment|	# When config.regenerateEvery is set to a value, we create a timer here
+1|prop|	regenerateTimer: null
+0|empty|
+1|comment|	# Get the Configuration
+1|method|	getConfig: ->
+2|code|		return @config or {}
+0|empty|
+1|comment|	# Get the Port
+1|method|	getPort: ->
+2|code|		return @getConfig().port ? process.env.PORT ? process.env.VCAP_APP_PORT ? process.env.VMC_APP_PORT ? 9778
+0|empty|
+1|comment|	# Get the Hostname
+1|method|	getHostname: ->
+2|code|		return @getConfig().hostname ? process.env.HOSTNAME ? null
+0|empty|
+0|empty|
+1|comment|	# =================================
+1|comment|	# Initialization Functions
+0|empty|
+1|comment|	# Construct DocPad
+1|comment|	# next(err)
+1|prop|	constructor: (instanceConfig,next) ->
+2|comment|		# Prepare
+2|code|		[instanceConfig,next] = extractOptsAndCallback(instanceConfig, next)
+2|code|		docpad = @
+0|empty|
+2|comment|		# Allow DocPad to have unlimited event listeners
+2|code|		@setMaxListeners(0)
+0|empty|
+2|comment|		# Setup configuration event wrappers
+2|code|		configEventContext = {docpad}  # here to allow the config event context to persist between event calls
+2|code|		@getEvents().forEach (eventName) ->
+3|code|			# Bind to the event
+3|code|			docpad.on eventName, (opts,next) ->
+4|code|				eventHandler = docpad.getConfig().events?[eventName]
+4|code|				# Fire the config event handler for this event, if it exists
+4|code|				if typeChecker.isFunction(eventHandler)
+5|code|					args = [opts,next]
+5|code|					ambi(eventHandler.bind(configEventContext), args...)
+4|code|				# It doesn't exist, so lets continue
+4|code|				else
+5|code|					next()
+0|empty|
+2|comment|		# Create our action runner
+2|code|		@actionRunnerInstance = new TaskGroup('action runner').run().on 'complete', (err) ->
+3|code|			docpad.error(err)  if err
+0|empty|
+2|comment|		# Create our error runner
+2|code|		@errorRunnerInstance = new TaskGroup('error runner').run().on 'complete', (err) ->
+3|code|			if err and docpad.getDebugging()
+4|code|				locale = docpad.getLocale()
+4|code|				docpad.log('warn', locale.reportError+' '+locale.errorFollows, (err.stack ? err.message).toString())
+0|empty|
+2|comment|		# Create our track runner
+2|code|		@trackRunnerInstance = new TaskGroup('track runner').run().on 'complete', (err) ->
+3|code|			if err and docpad.getDebugging()
+4|code|				locale = docpad.getLocale()
+4|code|				docpad.log('warn', locale.trackError+' '+locale.errorFollows, (err.stack ? err.message).toString())
+0|empty|
+2|comment|		# Initialize the loggers
+2|code|		if (loggers = instanceConfig.loggers)
+3|code|			delete instanceConfig.loggers
+2|code|		else
+3|code|			# Create
+3|code|			logger = new (require('caterpillar').Logger)(lineOffset: 2)
+0|empty|
+3|code|			# console
+3|code|			loggerConsole = logger
+4|code|				.pipe(
+5|code|					new (require('caterpillar-filter').Filter)
+4|code|				)
+4|code|				.pipe(
+5|code|					new (require('caterpillar-human').Human)
+4|code|				)
+0|empty|
+3|code|			# Apply
+3|code|			loggers = {logger, console:loggerConsole}
+0|empty|
+2|comment|		# Apply the loggers
+2|code|		safefs.unlink(@debugLogPath, ->)  # Remove the old debug log file
+2|code|		@setLoggers(loggers)  # Apply the logger streams
+2|code|		@setLogLevel(@initialConfig.logLevel)  # Set the default log level
+0|empty|
+2|comment|		# Log to bubbled events
+2|code|		@on 'log', (args...) ->
+3|code|			docpad.log.apply(@,args)
+0|empty|
+2|comment|		# Dereference and initialise advanced variables
+2|comment|		# we deliberately ommit initialTemplateData here, as it is setup in getTemplateData
+2|code|		@slowPlugins = {}
+2|code|		@loadedPlugins = {}
+2|code|		@exchange = {}
+2|code|		@pluginsTemplateData = {}
+2|code|		@instanceConfig = {}
+2|code|		@collections = []
+2|code|		@blocks = {}
+2|code|		@filesByUrl = {}
+2|code|		@filesBySelector = {}
+2|code|		@filesByOutPath = {}
+2|code|		@database = new FilesCollection(null, {name:'database'})
+3|code|			.on('remove', (model,options) ->
+4|code|				# Skip if we are not a writeable file
+4|code|				return  if model.get('write') is false
+0|empty|
+4|code|				# Delete the urls
+4|code|				for url in model.get('urls') or []
+5|code|					delete docpad.filesByUrl[url]
+0|empty|
+4|code|				# Ensure we regenerate anything (on the next regeneration) that was using the same outPath
+4|code|				outPath = model.get('outPath')
+4|code|				if outPath
+5|code|					updatedModels = docpad.database.findAll({outPath})
+5|code|					updatedModels.remove(model)
+5|code|					updatedModels.each (model) ->
+5|code|						model.set('mtime': new Date())
+0|empty|
+5|code|					# Log
+5|code|					docpad.log('debug', 'Updated mtime for these models due to remove of a similar one', updatedModels.pluck('relativePath'))
+0|empty|
+4|code|				# Return safely
+4|code|				return true
+3|code|			)
+3|code|			.on('add change:urls', (model) ->
+4|code|				# Skip if we are not a writeable file
+4|code|				return  if model.get('write') is false
+0|empty|
+4|code|				# Delete the old urls
+4|code|				for url in model.previous('urls') or []
+5|code|					delete docpad.filesByUrl[url]
+0|empty|
+4|code|				# Add the new urls
+4|code|				for url in model.get('urls')
+5|code|					docpad.filesByUrl[url] = model.cid
+0|empty|
+4|code|				# Return safely
+4|code|				return true
+3|code|			)
+3|code|			.on('add change:outPath', (model) ->
+4|code|				# Skip if we are not a writeable file
+4|code|				return  if model.get('write') is false
+0|empty|
+4|code|				# Check if we have changed our outPath
+4|code|				previousOutPath = model.previous('outPath')
+4|code|				if previousOutPath
+5|code|					# Ensure we regenerate anything (on the next regeneration) that was using the same outPath
+5|code|					previousModels = docpad.database.findAll(outPath:previousOutPath)
+5|code|					previousModels.remove(model)
+5|code|					previousModels.each (model) ->
+5|code|						model.set('mtime': new Date())
+0|empty|
+5|code|					# Log
+5|code|					docpad.log('debug', 'Updated mtime for these models due to addition of a similar one', previousModels.pluck('relativePath'))
+0|empty|
+5|code|					# Update the cache entry with another file that has the same outPath or delete it if there aren't any others
+5|code|					previousModelId = docpad.filesByOutPath[previousOutPath]
+5|code|					if previousModelId is model.id
+5|code|						if previousModels.length
+5|code|							docpad.filesByOutPath[previousOutPath] = previousModelId
+5|code|						else
+5|code|							delete docpad.filesByOutPath[previousOutPath]
+0|empty|
+4|code|				# Update the cache entry and fetch the latest if it was already set
+4|code|				if (outPath = model.get('outPath'))
+5|code|					existingModelId = docpad.filesByOutPath[outPath] ?= model.id
+5|code|					if existingModelId isnt model.id
+5|code|						existingModel = docpad.database.get(existingModelId)
+5|code|						if existingModel
+5|code|							# We have a conflict, let the user know
+5|code|							modelPath = model.get('fullPath') or (model.get('relativePath')+':'+model.id)
+5|code|							existingModelPath = existingModel.get('fullPath') or (existingModel.get('relativePath')+':'+existingModel.id)
+5|code|							message =  util.format(docpad.getLocale().outPathConflict, outPath, modelPath, existingModelPath)
+5|code|							docpad.warn(message)
+5|code|						else
+5|code|							# There reference was old, update it with our new one
+5|code|							docpad.filesByOutPath[outPath] = model.id
+0|empty|
+4|code|				# Return safely
+4|code|				return true
+3|code|			)
+2|code|		@userConfig = extendr.dereference(@userConfig)
+2|code|		@initialConfig = extendr.dereference(@initialConfig)
+0|empty|
+2|comment|		# Extract action
+2|code|		if instanceConfig.action?
+3|code|			action = instanceConfig.action
+2|code|		else
+3|code|			action = 'load ready'
+0|empty|
+2|comment|		# Check if we want to perform an action
+2|code|		if action
+3|code|			@action action, instanceConfig, (err) ->
+4|code|				return docpad.fatal(err)  if err
+4|code|				next?(null,docpad)
+2|code|		else
+3|code|			next?(null,docpad)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Destroy
+1|comment|	# This is an action, and should be called as such
+1|comment|	# E.g. docpad.action('destroy', next)
+1|prop|	destroy: (opts, next) =>
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts, next)
+2|code|		docpad = @
+0|empty|
+2|comment|		# Destroy Regenerate Timer
+2|code|		docpad.destroyRegenerateTimer()
+0|empty|
+2|comment|		# Destroy Plugins
+2|code|		docpad.emitSerial 'docpadDestroy', (err) ->
+3|code|			# Check
+3|code|			return next?(err)  if err
+0|empty|
+3|code|			# Destroy Plugins
+3|code|			docpad.destroyPlugins()
+0|empty|
+3|code|			# Destroy Server
+3|code|			docpad.destroyServer()
+0|empty|
+3|code|			# Destroy Watchers
+3|code|			docpad.destroyWatchers()
+0|empty|
+3|code|			# Destroy Blocks
+3|code|			docpad.destroyBlocks()
+0|empty|
+3|code|			# Destroy Collections
+3|code|			docpad.destroyCollections()
+0|empty|
+3|code|			# Destroy Database
+3|code|			docpad.destroyDatabase()
+0|empty|
+3|code|			# Destroy Logging
+3|code|			docpad.destroyLoggers()
+0|empty|
+3|code|			# Destroy Process Listners
+3|code|			process.removeListener('uncaughtException', docpad.error)
+0|empty|
+3|code|			# Destroy DocPad Listeners
+3|code|			docpad.removeAllListeners()
+0|empty|
+3|code|			# Forward
+3|code|			return next?()
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Emit Serial
+1|prop|	emitSerial: (eventName, opts, next) ->
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts, next)
+2|code|		docpad = @
+2|code|		locale = docpad.getLocale()
+0|empty|
+2|comment|		# Log
+2|code|		docpad.log 'debug', util.format(locale.emittingEvent, eventName)
+0|empty|
+2|comment|		# Emit
+2|code|		super eventName, opts, (err) ->
+3|code|			# Check
+3|code|			return next(err)  if err
+0|empty|
+3|code|			# Log
+3|code|			docpad.log 'debug', util.format(locale.emittedEvent, eventName)
+0|empty|
+3|code|			# Forward
+3|code|			return next(err)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Emit Parallel
+1|prop|	emitParallel: (eventName, opts, next) ->
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts, next)
+2|code|		docpad = @
+2|code|		locale = docpad.getLocale()
+0|empty|
+2|comment|		# Log
+2|code|		docpad.log 'debug', util.format(locale.emittingEvent, eventName)
+0|empty|
+2|comment|		# Emit
+2|code|		super eventName, opts, (err) ->
+3|code|			# Check
+3|code|			return next(err)  if err
+0|empty|
+3|code|			# Log
+3|code|			docpad.log 'debug', util.format(locale.emittedEvent, eventName)
+0|empty|
+3|code|			# Forward
+3|code|			return next(err)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+0|empty|
+1|comment|	# =================================
+1|comment|	# Helpers
+0|empty|
+1|method|	getIgnoreOpts: ->
+2|code|		return _.pick(@config, 'ignorePaths', 'ignoreHiddenFiles', 'ignoreCommonPatterns', 'ignoreCustomPatterns')
+0|empty|
+1|comment|	# Is Ignored Path
+1|prop|	isIgnoredPath: (path,opts={}) ->
+2|code|		opts = extendr.extend(@getIgnoreOpts(), opts)
+2|code|		return ignorefs.isIgnoredPath(path, opts)
+0|empty|
+1|comment|	# Scan Directory
+1|prop|	scandir: (opts={}) ->
+2|code|		opts = extendr.extend(@getIgnoreOpts(), opts)
+2|code|		return balUtil.scandir(opts)
+0|empty|
+1|comment|	# Watch Directory
+1|prop|	watchdir: (opts={}) ->
+2|code|		opts = extendr.extend(@getIgnoreOpts(), opts, @config.watchOptions)
+2|code|		return require('watchr').watch(opts)
+0|empty|
+0|empty|
+1|comment|	# =================================
+1|comment|	# Setup and Loading
+0|empty|
+1|comment|	# Ready
+1|comment|	# next(err,docpadInstance)
+1|prop|	ready: (opts,next) =>
+2|comment|		# Prepare
+2|code|		[instanceConfig,next] = extractOptsAndCallback(instanceConfig,next)
+2|code|		docpad = @
+2|code|		config = @getConfig()
+2|code|		locale = @getLocale()
+0|empty|
+2|comment|		# Render Single Extensions
+2|code|		@DocumentModel::defaults.renderSingleExtensions = config.renderSingleExtensions
+0|empty|
+2|comment|		# Version Check
+2|code|		@compareVersion()
+0|empty|
+2|comment|		# Welcome Prepare
+2|code|		if @getDebugging()
+3|code|			pluginsList = ("#{pluginName} v#{@loadedPlugins[pluginName].version}"  for pluginName in Object.keys(@loadedPlugins).sort()).join(', ')
+2|code|		else
+3|code|			pluginsList = Object.keys(@loadedPlugins).sort().join(', ')
+0|empty|
+2|comment|		# Welcome Output
+2|code|		docpad.log 'info', util.format(locale.welcome, @getVersionString())
+2|code|		docpad.log 'notice', locale.welcomeDonate
+2|code|		docpad.log 'info', locale.welcomeContribute
+2|code|		docpad.log 'info', util.format(locale.welcomePlugins, pluginsList)
+2|code|		docpad.log 'info', util.format(locale.welcomeEnvironment, @getEnvironment())
+0|empty|
+2|comment|		# Prepare
+2|code|		tasks = new TaskGroup 'ready tasks', next:(err) ->
+3|code|			# Error?
+3|code|			return docpad.error(err)  if err
+0|empty|
+3|code|			# All done, forward our DocPad instance onto our creator
+3|code|			return next?(null,docpad)
+0|empty|
+2|code|		tasks.addTask 'welcome event', (complete) ->
+3|code|			# No welcome
+3|code|			return complete()  unless config.welcome
+0|empty|
+3|code|			# Welcome
+3|code|			docpad.emitSerial('welcome', {docpad}, complete)
+0|empty|
+2|code|		tasks.addTask 'track', (complete) ->
+3|code|			# Identify
+3|code|			return docpad.identify(complete)
+0|empty|
+2|code|		tasks.addTask 'emit docpadReady', (complete) ->
+3|code|			docpad.emitSerial('docpadReady', {docpad}, complete)
+0|empty|
+2|comment|		# Run tasks
+2|code|		tasks.run()
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Merge Configurations
+1|prop|	mergeConfigurations: (configPackages,configsToMerge) ->
+2|comment|		# Prepare
+2|code|		envs = @getEnvironments()
+0|empty|
+2|comment|		# Figure out merging
+2|code|		for configPackage in configPackages
+3|code|			continue  unless configPackage
+3|code|			configsToMerge.push(configPackage)
+3|code|			for env in envs
+4|code|				envConfig = configPackage.environments?[env]
+4|code|				configsToMerge.push(envConfig)  if envConfig
+0|empty|
+2|comment|		# Merge
+2|code|		extendr.safeDeepExtendPlainObjects(configsToMerge...)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Set Instance Configuration
+1|method|	setInstanceConfig: (instanceConfig) ->
+2|comment|		# Merge in the instance configurations
+2|code|		if instanceConfig
+3|code|			extendr.safeDeepExtendPlainObjects(@instanceConfig, instanceConfig)
+3|code|			extendr.safeDeepExtendPlainObjects(@config, instanceConfig)  if @config
+2|code|		@
+0|empty|
+1|comment|	# Set Configuration
+1|comment|	# next(err,config)
+1|prop|	setConfig: (instanceConfig,next) =>
+2|comment|		# Prepare
+2|code|		[instanceConfig,next] = extractOptsAndCallback(instanceConfig,next)
+2|code|		docpad = @
+2|code|		locale = @getLocale()
+0|empty|
+2|comment|		# Apply the instance configuration, generally we won't have it at this level
+2|comment|		# as it would have been applied earlier the load step
+2|code|		@setInstanceConfig(instanceConfig)  if instanceConfig
+0|empty|
+2|comment|		# Apply the environment
+2|comment|		# websitePackageConfig.env is left out of the detection here as it is usually an object
+2|comment|		# that is already merged with our process.env by the environment runner
+2|comment|		# rather than a string which is the docpad convention
+2|code|		@config.env = @instanceConfig.env or @websiteConfig.env or @initialConfig.env or process.env.NODE_ENV
+0|empty|
+2|comment|		# Merge configurations
+2|code|		configPackages = [@initialConfig, @userConfig, @websiteConfig, @instanceConfig]
+2|code|		configsToMerge = [@config]
+2|code|		docpad.mergeConfigurations(configPackages, configsToMerge)
+0|empty|
+2|comment|		# Extract and apply the server
+2|code|		@setServer extendr.safeShallowExtendPlainObjects({
+3|code|			serverHttp: @config.serverHttp
+3|code|			serverExpress: @config.serverExpress
+2|code|		},  @config.server)
+0|empty|
+2|comment|		# Extract and apply the logger
+2|code|		@setLogLevel(@config.logLevel)
+0|empty|
+2|comment|		# Resolve any paths
+2|code|		@config.rootPath = pathUtil.resolve(@config.rootPath)
+2|code|		@config.outPath = pathUtil.resolve(@config.rootPath, @config.outPath)
+2|code|		@config.srcPath = pathUtil.resolve(@config.rootPath, @config.srcPath)
+2|code|		@config.databaseCachePath = pathUtil.resolve(@config.rootPath, @config.databaseCachePath)
+2|code|		@config.packagePath = pathUtil.resolve(@config.rootPath, @config.packagePath)
+0|empty|
+2|comment|		# Resolve Documents, Files, Layouts paths
+2|code|		for type in ['documents','files','layouts']
+3|code|			typePaths = @config[type+'Paths']
+3|code|			for typePath,key in typePaths
+4|code|				typePaths[key] = pathUtil.resolve(@config.srcPath, typePath)
+0|empty|
+2|comment|		# Resolve Plugins paths
+2|code|		for type in ['plugins']
+3|code|			typePaths = @config[type+'Paths']
+3|code|			for typePath,key in typePaths
+4|code|				typePaths[key] = pathUtil.resolve(@config.rootPath, typePath)
+0|empty|
+2|comment|		# Bind the error handler, so we don't crash on errors
+2|code|		process.removeListener('uncaughtException', @error)
+2|code|		@removeListener('error', @error)
+2|code|		if @config.catchExceptions
+3|code|			process.setMaxListeners(0)
+3|code|			process.on('uncaughtException', @error)
+3|code|			@on('error', @error)
+0|empty|
+2|comment|		# Prepare the Post Tasks
+2|code|		postTasks = new TaskGroup 'setConfig post tasks', next:(err) ->
+3|code|			return next(err, docpad.config)
+0|empty|
+2|comment|		###
+2|code|		postTasks.addTask 'lazy depedencnies: encoding', (complete) =>
+3|code|			return complete()  unless @config.detectEncoding
+3|code|			return lazyRequire 'encoding', {cwd:corePath, stdio:'inherit'}, (err) ->
+4|code|				docpad.warn(locale.encodingLoadFailed)  if err
+4|code|				return complete()
+2|comment|		###
+0|empty|
+2|code|		postTasks.addTask 'load plugins', (complete) ->
+3|code|			docpad.loadPlugins(complete)
+0|empty|
+2|code|		postTasks.addTask 'extend collections', (complete) ->
+3|code|			docpad.extendCollections(complete)
+0|empty|
+2|code|		postTasks.addTask 'fetch plugins templateData', (complete) ->
+3|code|			docpad.emitSerial('extendTemplateData', {templateData:docpad.pluginsTemplateData}, complete)
+0|empty|
+2|code|		postTasks.addTask 'fire the docpadLoaded event', (complete) ->
+3|code|			docpad.emitSerial('docpadLoaded', complete)
+0|empty|
+2|comment|		# Fire post tasks
+2|code|		postTasks.run()
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+0|empty|
+1|comment|	# Load Configuration
+1|comment|	# next(err,config)
+1|prop|	load: (instanceConfig,next) =>
+2|comment|		# Prepare
+2|code|		[instanceConfig,next] = extractOptsAndCallback(instanceConfig,next)
+2|code|		docpad = @
+2|code|		locale = @getLocale()
+2|code|		instanceConfig or= {}
+0|empty|
+2|comment|		# Reset non persistant configurations
+2|code|		@websitePackageConfig = {}
+2|code|		@websiteConfig = {}
+2|code|		@config = {}
+0|empty|
+2|comment|		# Merge in the instance configurations
+2|code|		@setInstanceConfig(instanceConfig)
+0|empty|
+2|comment|		# Prepare the Load Tasks
+2|code|		preTasks = new TaskGroup 'load tasks', next:(err) =>
+3|code|			return next(err)  if err
+3|code|			return @setConfig(next)
+0|empty|
+2|code|		preTasks.addTask 'normalize the userConfigPath', (complete) =>
+3|code|			safeps.getHomePath (err,homePath) =>
+4|code|				return complete(err)  if err
+4|code|				dropboxPath = pathUtil.resolve(homePath, 'Dropbox')
+4|code|				safefs.exists dropboxPath, (dropboxPathExists) =>
+5|code|					# @TODO: Implement checks here for
+5|code|					# https://github.com/bevry/docpad/issues/799
+5|code|					userConfigDirPath = if dropboxPathExists then dropboxPath else homePath
+5|code|					@userConfigPath = pathUtil.resolve(userConfigDirPath, @userConfigPath)
+5|code|					return complete()
+0|empty|
+2|code|		preTasks.addTask "load the user's configuration", (complete) =>
+3|code|			configPath = @userConfigPath
+3|code|			docpad.log 'debug', util.format(locale.loadingUserConfig, configPath)
+3|code|			@loadConfigPath {configPath}, (err,data) =>
+4|code|				return complete(err)  if err
+0|empty|
+4|code|				# Apply loaded data
+4|code|				extendr.extend(@userConfig, data or {})
+0|empty|
+4|code|				# Done
+4|code|				docpad.log 'debug', util.format(locale.loadingUserConfig, configPath)
+4|code|				return complete()
+0|empty|
+2|code|		preTasks.addTask "load the anonymous user's configuration", (complete) =>
+3|code|			# Ignore if username is already identified
+3|code|			return complete()  if @userConfig.username
+0|empty|
+3|code|			# User is anonymous, set their username to the hashed and salted mac address
+3|code|			require('getmac').getMac (err,macAddress) =>
+4|code|				if err or !macAddress
+5|code|					return docpad.trackError(err or new Error('no mac address'), complete)
+0|empty|
+4|code|				# Hash with salt
+4|code|				try
+5|code|					macAddressHash = require('crypto').createHmac('sha1', docpad.hashKey).update(macAddress).digest('hex')
+4|code|				catch err
+5|code|					return complete()  if err
+0|empty|
+4|code|				# Apply
+4|code|				if macAddressHash
+5|code|					@userConfig.name ?= "MAC #{macAddressHash}"
+5|code|					@userConfig.username ?= macAddressHash
+0|empty|
+4|code|				# Next
+4|code|				return complete()
+0|empty|
+2|code|		preTasks.addTask "load the website's package data", (complete) =>
+3|code|			rootPath = pathUtil.resolve(@instanceConfig.rootPath or @initialConfig.rootPath)
+3|code|			configPath = pathUtil.resolve(rootPath, @instanceConfig.packagePath or @initialConfig.packagePath)
+3|code|			docpad.log 'debug', util.format(locale.loadingWebsitePackageConfig, configPath)
+3|code|			@loadConfigPath {configPath}, (err,data) =>
+4|code|				return complete(err)  if err
+4|code|				data or= {}
+0|empty|
+4|code|				# Apply loaded data
+4|code|				@websitePackageConfig = data
+0|empty|
+4|code|				# Done
+4|code|				docpad.log 'debug', util.format(locale.loadedWebsitePackageConfig, configPath)
+4|code|				return complete()
+0|empty|
+2|code|		preTasks.addTask "read the .env file if it exists", (complete) =>
+3|code|			rootPath = pathUtil.resolve(@instanceConfig.rootPath or @websitePackageConfig.rootPath or @initialConfig.rootPath)
+3|code|			configPath = pathUtil.resolve(rootPath, '.env')
+3|code|			docpad.log 'debug', util.format(locale.loadingEnvConfig, configPath)
+3|code|			safefs.exists configPath, (exists) ->
+4|code|				return complete()  unless exists
+4|code|				require('envfile').parseFile configPath, (err,data) ->
+5|code|					return complete(err)  if err
+5|code|					for own key,value of data
+5|code|						process.env[key] = value
+5|code|					docpad.log 'debug', util.format(locale.loadingEnvConfig, configPath)
+5|code|					return complete()
+0|empty|
+2|code|		preTasks.addTask "load the website's configuration", (complete) =>
+3|code|			docpad.log 'debug', util.format(locale.loadingWebsiteConfig)
+3|code|			rootPath = pathUtil.resolve(@instanceConfig.rootPath or @initialConfig.rootPath)
+3|code|			configPaths = @instanceConfig.configPaths or @initialConfig.configPaths
+3|code|			for configPath, index in configPaths
+4|code|				configPaths[index] = pathUtil.resolve(rootPath, configPath)
+3|code|			@loadConfigPath {configPaths}, (err,data) =>
+4|code|				return complete(err)  if err
+4|code|				data or= {}
+0|empty|
+4|code|				# Apply loaded data
+4|code|				extendr.extend(@websiteConfig, data)
+0|empty|
+4|code|				# Done
+4|code|				docpad.log 'debug', util.format(locale.loadedWebsiteConfig)
+4|code|				return complete()
+0|empty|
+2|comment|		# Run the load tasks synchronously
+2|code|		preTasks.run()
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+0|empty|
+1|comment|	# =================================
+1|comment|	# Configuration
+0|empty|
+1|comment|	# Update User Configuration
+1|prop|	updateUserConfig: (data={},next) ->
+2|comment|		# Prepare
+2|code|		[data,next] = extractOptsAndCallback(data,next)
+2|code|		docpad = @
+2|code|		userConfigPath = @userConfigPath
+0|empty|
+2|comment|		# Apply back to our loaded configuration
+2|comment|		# does not apply to @config as we would have to reparse everything
+2|comment|		# and that appears to be an imaginary problem
+2|code|		extendr.extend(@userConfig, data)  if data
+0|empty|
+2|comment|		# Write it with CSON
+2|code|		CSON.stringify @userConfig, (err,userConfigString) ->
+3|code|			# Check
+3|code|			return next?(err)  if err
+0|empty|
+3|code|			# Write it
+3|code|			safefs.writeFile userConfigPath, userConfigString, 'utf8', (err) ->
+4|code|				# Forward
+4|code|				return next?(err)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Load a configuration url
+1|comment|	# next(err,parsedData)
+1|prop|	loadConfigUrl: (configUrl,next) ->
+2|comment|		# Prepare
+2|code|		docpad = @
+2|code|		locale = @getLocale()
+0|empty|
+2|comment|		# Log
+2|code|		docpad.log 'debug', util.format(locale.loadingConfigUrl, configUrl)
+0|empty|
+2|comment|		# Read the URL
+2|code|		superAgent
+3|code|			.get(configUrl)
+3|code|			.timeout(30*1000)
+3|code|			.end (err,res) ->
+4|code|				# Check
+4|code|				return next(err)  if err
+0|empty|
+4|code|				# Read the string using CSON
+4|code|				CSON.parse(res.text, next)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Load the configuration path
+1|comment|	# next(err,parsedData)
+1|prop|	loadConfigPath: (opts,next) ->
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts, next)
+2|code|		docpad = @
+2|code|		locale = @getLocale()
+0|empty|
+2|comment|		# Prepare
+2|code|		load = (configPath) ->
+3|code|			# Check
+3|code|			return next()  unless configPath
+0|empty|
+3|code|			# Log
+3|code|			docpad.log 'debug', util.format(locale.loadingConfigPath, configPath)
+0|empty|
+3|code|			# Check that it exists
+3|code|			safefs.exists configPath, (exists) ->
+4|code|				return next()  unless exists
+0|empty|
+4|code|				# Read the path using CSON
+4|code|				CSON.parseFile configPath, (err,result) ->
+5|code|					if err
+5|code|						docpad.log 'error', util.format(locale.loadingConfigPathFailed, configPath)
+5|code|					return next(err, result)
+0|empty|
+2|comment|		# Check
+2|code|		if opts.configPath
+3|code|			load(opts.configPath)
+2|code|		else
+3|code|			@getConfigPath opts, (err,configPath) ->
+4|code|				load(configPath)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Get Config Path
+1|comment|	# next(err,path)
+1|prop|	getConfigPath: (opts,next) ->
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts, next)
+2|code|		docpad = @
+2|code|		config = @getConfig()
+2|code|		result = null
+0|empty|
+2|comment|		# Ensure array
+2|code|		opts.configPaths ?= config.configPaths
+2|code|		opts.configPaths = [opts.configPaths]  unless typeChecker.isArray(opts.configPaths)
+0|empty|
+2|code|		tasks = new TaskGroup 'getConfigPath tasks', next:(err) ->
+3|code|			return next(err, result)
+0|empty|
+2|comment|		# Determine our configuration path
+2|code|		opts.configPaths.forEach (configPath) ->
+3|code|			tasks.addTask "Checking if [#{configPath}] exists", (complete) ->
+4|code|				return complete()  if result
+4|code|				safefs.exists configPath, (exists) ->
+5|code|					if exists
+5|code|						result = configPath
+5|code|						tasks.exit()
+5|code|					else
+5|code|						complete()
+0|empty|
+2|comment|		# Run them synchronously
+2|code|		tasks.run()
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Extend Collecitons
+1|comment|	# next(err)
+1|method|	extendCollections: (next) ->
+2|comment|		# Prepare
+2|code|		docpad = @
+2|code|		docpadConfig = @getConfig()
+2|code|		locale = @getLocale()
+2|code|		database = @getDatabase()
+0|empty|
+2|comment|		# Standard Collections
+2|code|		@setCollections({
+3|code|			# Standard Collections
+3|code|			documents: database.createLiveChildCollection()
+4|code|				.setQuery('isDocument', {
+5|code|					render: true
+5|code|					write: true
+4|code|				})
+4|code|				.on('add', (model) ->
+5|code|					docpad.log('debug', util.format(locale.addingDocument, model.getFilePath()))
+4|code|				)
+3|code|			files: database.createLiveChildCollection()
+4|code|				.setQuery('isFile', {
+5|code|					render: false
+5|code|					write: true
+4|code|				})
+4|code|				.on('add', (model) ->
+5|code|					docpad.log('debug', util.format(locale.addingFile, model.getFilePath()))
+4|code|				)
+3|code|			layouts: database.createLiveChildCollection()
+4|code|				.setQuery('isLayout', {
+5|code|					$or:
+5|code|						isLayout: true
+5|code|						fullPath: $startsWith: docpadConfig.layoutsPaths
+4|code|				})
+4|code|				.on('add', (model) ->
+5|code|					docpad.log('debug', util.format(locale.addingLayout, model.getFilePath()))
+5|code|					model.setDefaults({
+5|code|						isLayout: true
+5|code|						render: false
+5|code|						write: false
+5|code|					})
+4|code|				)
+0|empty|
+3|code|			# Special Collections
+3|code|			generate: database.createLiveChildCollection()
+4|code|				.setQuery('generate', {
+5|code|					dynamic: false
+5|code|					ignored: false
+4|code|				})
+4|code|				.on('add', (model) ->
+5|code|					docpad.log('debug', util.format(locale.addingGenerate, model.getFilePath()))
+4|code|				)
+3|code|			referencesOthers: database.createLiveChildCollection()
+4|code|				.setQuery('referencesOthers', {
+5|code|					dynamic: false
+5|code|					ignored: false
+5|code|					referencesOthers: true
+4|code|				})
+4|code|				.on('add', (model) ->
+5|code|					docpad.log('debug', util.format(locale.addingReferencesOthers, model.getFilePath()))
+4|code|				)
+3|code|			hasLayout: database.createLiveChildCollection()
+4|code|				.setQuery('hasLayout', {
+5|code|					dynamic: false
+5|code|					ignored: false
+5|code|					layout: $exists: true
+4|code|				})
+4|code|				.on('add', (model) ->
+5|code|					docpad.log('debug', util.format(locale.addingHasLayout, model.getFilePath()))
+4|code|				)
+3|code|			html: database.createLiveChildCollection()
+4|code|				.setQuery('isHTML', {
+5|code|					write: true
+5|code|					outExtension: 'html'
+4|code|				})
+4|code|				.on('add', (model) ->
+5|code|					docpad.log('debug', util.format(locale.addingHtml, model.getFilePath()))
+4|code|				)
+3|code|			stylesheet: database.createLiveChildCollection()
+4|code|				.setQuery('isStylesheet', {
+5|code|					write: true
+5|code|					outExtension: 'css'
+4|code|				})
+2|code|		})
+0|empty|
+2|comment|		# Blocks
+2|code|		@setBlocks({
+3|code|			meta: new MetaCollection()
+3|code|			scripts: new ScriptsCollection()
+3|code|			styles: new StylesCollection()
+2|code|		})
+0|empty|
+2|comment|		# Custom Collections Group
+2|code|		tasks = new TaskGroup "extendCollections tasks", concurrency:0, next:(err) ->
+3|code|			docpad.error(err)  if err
+3|code|			docpad.emitSerial('extendCollections', next)
+0|empty|
+2|comment|		# Cycle through Custom Collections
+2|code|		eachr docpadConfig.collections or {}, (fn,name) ->
+3|code|			tasks.addTask "creating the custom collection: #{name}", (complete) ->
+4|code|				# Init
+4|code|				ambi [fn.bind(docpad), fn], database, (err, collection) ->
+5|code|					# Check for error
+5|code|					if err
+5|code|						docpad.error(err)
+5|code|						return complete()
+0|empty|
+5|code|					# Check the type of the collection
+5|code|					else unless collection instanceof QueryCollection
+5|code|						docpad.log 'warn', util.format(locale.errorInvalidCollection, name)
+5|code|						return complete()
+0|empty|
+5|code|					# Make it a live collection
+5|code|					collection.live(true)  if collection
+0|empty|
+5|code|					# Apply the collection
+5|code|					docpad.setCollection(name, collection)
+5|code|					return complete()
+0|empty|
+2|comment|		# Run Custom collections
+2|code|		tasks.run()
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Reset Collections
+1|comment|	# next(err)
+1|prop|	resetCollections: (opts,next) ->
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts, next)
+2|code|		docpad = @
+2|code|		database = docpad.getDatabase()
+0|empty|
+2|comment|		# Make it as if we have never generated before
+2|code|		docpad.generated = false
+0|empty|
+2|comment|		# Perform a complete clean of our collections
+2|code|		database.reset([])
+2|code|		meta = @getBlock('meta').reset([])
+2|code|		scripts = @getBlock('scripts').reset([])
+2|code|		styles = @getBlock('styles').reset([])
+2|comment|		# ^ Backbone.js v1.1 changes the return values of these, however we change that in our Element class
+2|comment|		# because if we didn't, all our skeletons would fail
+0|empty|
+2|comment|		# Add default block entries
+2|code|		meta.add("""<meta name="generator" content="DocPad v#{docpad.getVersion()}" />""")  if docpad.getConfig().poweredByDocPad isnt false
+0|empty|
+2|comment|		# Reset caches
+2|code|		@filesByUrl = {}
+2|code|		@filesBySelector = {}
+2|code|		@filesByOutPath = {}
+0|empty|
+2|comment|		# Chain
+2|code|		next()
+2|code|		@
+0|empty|
+1|comment|	# Init Git Repo
+1|comment|	# next(err,results)
+1|prop|	initGitRepo: (opts,next) ->
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts, next)
+2|code|		docpad = @
+2|code|		config = @getConfig()
+0|empty|
+2|comment|		# Extract
+2|code|		opts.cwd ?= config.rootPath
+2|code|		opts.output ?= @getDebugging()
+0|empty|
+2|comment|		# Forward
+2|code|		safeps.initGitRepo(opts, next)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Init Node Modules
+1|comment|	# next(err,results)
+1|prop|	initNodeModules: (opts,next) ->
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts, next)
+2|code|		docpad = @
+2|code|		config = @getConfig()
+0|empty|
+2|comment|		# Extract
+2|code|		opts.cwd ?= config.rootPath
+2|code|		opts.output ?= docpad.getDebugging()
+2|code|		opts.force ?= if config.offline then false else true
+2|comment|		# ^ @todo this line causes --force to be added, when it shouldn't be
+2|code|		opts.args ?= []
+2|code|		opts.args.push('--force')  if config.force
+2|code|		opts.args.push('--no-registry')  if config.offline
+0|empty|
+2|comment|		# Log
+2|code|		docpad.log('info', 'npm install')  if opts.output
+0|empty|
+2|comment|		# Forward
+2|code|		safeps.initNodeModules(opts, next)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Fix Node Package Versions
+1|comment|	# Combat to https://github.com/npm/npm/issues/4587#issuecomment-35370453
+1|comment|	# next(err)
+1|method|	fixNodePackageVersions: (opts) ->
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts, next)
+2|code|		docpad = @
+2|code|		config = @getConfig()
+0|empty|
+2|comment|		# Extract
+2|code|		opts.packagePath ?= config.packagePath
+0|empty|
+2|comment|		# Read and replace
+2|code|		safefs.readFile opts.packagePath, (err,buffer) ->
+3|code|			data = buffer.toString()
+3|code|			data = data.replace(/("docpad(?:.*?)": ")\^/g, '$1~')
+3|code|			safefs.writeFile opts.packagePath, data, (err) ->
+4|code|				return next(err)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Install Node Module
+1|comment|	# next(err,result)
+1|prop|	installNodeModule: (names,opts) ->
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts, next)
+2|code|		docpad = @
+2|code|		config = @getConfig()
+0|empty|
+2|comment|		# Extract
+2|code|		opts.cwd ?= config.rootPath
+2|code|		opts.output ?= docpad.getDebugging()
+2|code|		opts.args ?= []
+0|empty|
+2|code|		opts.global ?= false
+2|code|		opts.global = ['--global']             if opts.global is true
+2|code|		opts.global = [opts.global]            if opts.global and Array.isArray(opts.global) is false
+0|empty|
+2|code|		opts.save ?= !opts.global
+2|code|		opts.save = ['--save']                 if opts.save is true
+2|code|		opts.save = [opts.save]                if opts.save and Array.isArray(opts.save) is false
+0|empty|
+2|comment|		# Command
+2|code|		command = ['npm', 'install']
+0|empty|
+2|comment|		# Names
+2|code|		names = names.split(/[,\s]+/)  unless typeChecker.isArray(names)
+2|code|		names.forEach (name) ->
+3|code|			# Check
+3|code|			return  unless name
+0|empty|
+3|code|			# Ensure latest if version isn't specfied
+3|code|			name += '@latest'  if name.indexOf('@') is -1
+0|empty|
+3|code|			# Push the name to the commands
+3|code|			command.push(name)
+0|empty|
+2|comment|		# Arguments
+2|code|		command.push(opts.args...)
+2|code|		command.push('--force')           if config.force
+2|code|		command.push('--no-registry')     if config.offline
+2|code|		command.push(opts.save...)        if opts.save
+2|code|		command.push(opts.global...)      if opts.global
+0|empty|
+2|comment|		# Log
+2|code|		docpad.log('info', command.join(' '))  if opts.output
+0|empty|
+2|comment|		# Forward
+2|code|		safeps.spawn(command, opts, next)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Uninstall Node Module
+1|comment|	# next(err,result)
+1|prop|	uninstallNodeModule: (names,opts) ->
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts, next)
+2|code|		docpad = @
+2|code|		config = @getConfig()
+0|empty|
+2|comment|		# Extract
+2|code|		opts.cwd ?= config.rootPath
+2|code|		opts.output ?= docpad.getDebugging()
+2|code|		opts.args ?= []
+0|empty|
+2|code|		opts.global ?= false
+2|code|		opts.global = ['--global']             if opts.global is true
+2|code|		opts.global = [opts.global]            if opts.global and Array.isArray(opts.global) is false
+0|empty|
+2|code|		opts.save ?= !opts.global
+2|code|		opts.save = ['--save', '--save-dev']   if opts.save is true
+2|code|		opts.save = [opts.save]                if opts.save and Array.isArray(opts.save) is false
+0|empty|
+2|comment|		# Command
+2|code|		command = ['npm', 'uninstall']
+0|empty|
+2|comment|		# Names
+2|code|		names = names.split(/[,\s]+/)  unless typeChecker.isArray(names)
+2|code|		command.push(names...)
+0|empty|
+2|comment|		# Arguments
+2|code|		command.push(opts.args...)
+2|code|		command.push(opts.save...)        if opts.save
+2|code|		command.push(opts.global...)      if opts.global
+0|empty|
+2|comment|		# Log
+2|code|		docpad.log('info', command.join(' '))  if opts.output
+0|empty|
+2|comment|		# Forward
+2|code|		safeps.spawn(command, opts, next)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+0|empty|
+0|empty|
+1|comment|	# =================================
+1|comment|	# Logging
+0|empty|
+1|comment|	# Set Log Level
+1|method|	setLogLevel: (level) ->
+2|code|		@getLogger().setConfig({level})
+2|code|		if level is 7
+3|code|			loggers = @getLoggers()
+3|code|			loggers.debug ?= loggers.logger
+4|code|				.pipe(
+5|code|					new (require('caterpillar-human').Human)(color:false)
+4|code|				)
+4|code|				.pipe(
+5|code|					require('fs').createWriteStream(@debugLogPath)
+4|code|				)
+2|code|		@
+0|empty|
+1|comment|	# Are we debugging?
+1|method|	getLogLevel: ->
+2|code|		return @getConfig().logLevel
+0|empty|
+1|comment|	# Are we debugging?
+1|method|	getDebugging: ->
+2|code|		return @getLogLevel() is 7
+0|empty|
+1|comment|	# Handle a fatal error
+1|method|	fatal: (err) =>
+2|code|		docpad = @
+2|code|		config = @getConfig()
+0|empty|
+2|comment|		# Check
+2|code|		return @  unless err
+0|empty|
+2|comment|		# Handle
+2|code|		@error err, 'err', ->
+3|code|			process.stderr.write require('util').inspect(err.stack or err.message)
+3|code|			docpad.destroy()
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Log
+1|method|	log: (args...) =>
+2|comment|		# Log
+2|code|		logger = @getLogger() or console
+2|code|		logger.log.apply(logger, args)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Handle an error
+1|prop|	error: (err,type='err',next) =>
+2|comment|		# Prepare
+2|code|		docpad = @
+2|code|		locale = @getLocale()
+0|empty|
+2|comment|		# Check if we have already logged this error
+2|code|		if !err or err.logged
+3|code|			next?()
+2|code|		else
+3|code|			# Log the error only if it hasn't been logged already
+3|code|			err.logged = true
+3|code|			err = new Error(err)  unless err.message?
+3|code|			err.logged = true
+3|code|			message = (err.stack ? err.message).toString()
+3|code|			docpad.log(type, locale.errorOccured, '\n'+message)
+3|code|			docpad.notify(err.message, title:locale.errorOccured)
+0|empty|
+3|code|			# Track
+3|code|			@trackError(err, next)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Track error
+1|prop|	trackError: (err,next) =>
+2|comment|		# PRepare
+2|code|		docpad = @
+2|code|		config = @getConfig()
+0|empty|
+2|comment|		# Track
+2|code|		if config.offline is false and config.reportErrors
+3|code|			data = {}
+3|code|			data.message = err.message
+3|code|			data.stack = err.stack.toString()  if err.stack
+3|code|			data.config = config
+3|code|			data.env = process.env
+3|code|			docpad.track('error', data, next)
+2|code|		else
+3|code|			setImmediate ->  # avoid zalgo
+4|code|				next?()
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Handle a warning
+1|prop|	warn: (message,err,next) =>
+2|comment|		# Prepare
+2|code|		docpad = @
+2|code|		locale = @getLocale()
+0|empty|
+2|comment|		# Log
+2|code|		docpad.log('warn', message)
+2|code|		docpad.error(err, 'warn', next)  if err
+2|code|		docpad.notify(message, title:locale.warnOccured)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Send a notify event to plugins (like growl)
+1|prop|	notify: (message,options={}) =>
+2|comment|		# Prepare
+2|code|		docpad = @
+0|empty|
+2|comment|		# Emit
+2|code|		docpad.emitSerial 'notify', {message,options}, (err) ->
+3|code|			docpad.error(err)  if err
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Check Request
+1|method|	checkRequest: (next) =>
+2|code|		next ?= @error.bind(@)
+2|code|		return (err,res) ->
+3|code|			# Check
+3|code|			return next(err, res)  if err
+0|empty|
+3|code|			# Check
+3|code|			if res.body?.success is false or res.body?.error
+4|code|				err = new Error(res.body.error or 'unknown request error')
+4|code|				return next(err, res)
+0|empty|
+3|code|			# Success
+3|code|			return next(null, res)
+0|empty|
+1|comment|	# Subscribe
+1|comment|	# next(err)
+1|method|	subscribe: (next) =>
+2|comment|		# Prepare
+2|code|		config = @getConfig()
+0|empty|
+2|comment|		# Check
+2|code|		if config.offline is false
+3|code|			if @userConfig?.email
+4|code|				# Data
+4|code|				data = {}
+4|code|				data.email = @userConfig.email  # required
+4|code|				data.name = @userConfig.name or null
+4|code|				data.username = @userConfig.username or null
+0|empty|
+4|code|				# Apply
+4|code|				superAgent
+5|code|					.post(config.helperUrl)
+5|code|					.type('json').set('Accept', 'application/json')
+5|code|					.query(
+5|code|						method: 'add-subscriber'
+5|code|					)
+5|code|					.send(data)
+5|code|					.timeout(30*1000)
+5|code|					.end @checkRequest next
+3|code|			else
+4|code|				err = new Error('Email not provided')
+4|code|				next?(err)
+2|code|		else
+3|code|			next?()
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Track
+1|comment|	# next(err)
+1|prop|	track: (name,things={},next) =>
+2|comment|		# Prepare
+2|code|		docpad = @
+2|code|		config = @getConfig()
+0|empty|
+2|comment|		# Check
+2|code|		if config.offline is false and config.reportStatistics
+3|code|			# Data
+3|code|			data = {}
+3|code|			data.userId = @userConfig.username or null
+3|code|			data.event = name
+3|code|			data.properties = things
+0|empty|
+3|code|			# Things
+3|code|			things.websiteName = @websitePackageConfig.name  if @websitePackageConfig?.name
+3|code|			things.platform = @getProcessPlatform()
+3|code|			things.environment = @getEnvironment()
+3|code|			things.version = @getVersion()
+3|code|			things.nodeVersion = @getProcessVersion()
+0|empty|
+3|code|			# Plugins
+3|code|			eachr docpad.loadedPlugins, (value,key) ->
+4|code|				things['plugin-'+key] = value.version or true
+0|empty|
+3|code|			# Apply
+3|code|			docpad.getTrackRunner().addTask 'track task', (complete) ->
+4|code|				superAgent
+5|code|					.post(config.helperUrl)
+5|code|					.type('json').set('Accept', 'application/json')
+5|code|					.query(
+5|code|						method: 'analytics'
+5|code|						action: 'track'
+5|code|					)
+5|code|					.send(data)
+5|code|					.timeout(30*1000)
+5|code|					.end docpad.checkRequest (err) ->
+5|code|						next?(err)
+5|code|						complete(err)  # we pass the error here, as if we error, we want to stop all tracking
+0|empty|
+2|code|		else
+3|code|			next?()
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Identify
+1|comment|	# next(err)
+1|method|	identify: (next) =>
+2|comment|		# Prepare
+2|code|		docpad = @
+2|code|		config = @getConfig()
+0|empty|
+2|comment|		# Check
+2|code|		if config.offline is false and config.reportStatistics and @userConfig?.username
+3|code|			# Data
+3|code|			data = {}
+3|code|			data.userId = @userConfig.username  # required
+3|code|			data.traits = things = {}
+0|empty|
+3|code|			# Things
+3|code|			now = new Date()
+3|code|			things.username = @userConfig.username  # required
+3|code|			things.email = @userConfig.email or null
+3|code|			things.name = @userConfig.name or null
+3|code|			things.lastLogin = now.toISOString()
+3|code|			things.lastSeen = now.toISOString()
+3|code|			things.countryCode = safeps.getCountryCode()
+3|code|			things.languageCode = safeps.getLanguageCode()
+3|code|			things.platform = @getProcessPlatform()
+3|code|			things.version = @getVersion()
+3|code|			things.nodeVersion = @getProcessVersion()
+0|empty|
+3|code|			# Is this a new user?
+3|code|			if docpad.userConfig.identified isnt true
+4|code|				# Update
+4|code|				things.created = now.toISOString()
+0|empty|
+4|code|				# Create the new user
+4|code|				docpad.getTrackRunner().addTask 'create new user', (complete) ->
+5|code|					superAgent
+5|code|						.post(config.helperUrl)
+5|code|						.type('json').set('Accept', 'application/json')
+5|code|						.query(
+5|code|							method: 'analytics'
+5|code|							action: 'identify'
+5|code|						)
+5|code|						.send(data)
+5|code|						.timeout(30*1000)
+5|code|						.end docpad.checkRequest (err) =>
+5|code|							# Save the changes with these
+5|code|							docpad.updateUserConfig(identified:true)
+0|empty|
+5|code|							# Complete
+5|code|							return complete(err)
+0|empty|
+3|code|			# Or an existing user?
+3|code|			else
+4|code|				# Update the existing user's information witht he latest
+4|code|				docpad.getTrackRunner().addTask 'update user', (complete) =>
+5|code|					superAgent
+5|code|						.post(config.helperUrl)
+5|code|						.type('json').set('Accept', 'application/json')
+5|code|						.query(
+5|code|							method: 'analytics'
+5|code|							action: 'identify'
+5|code|						)
+5|code|						.send(data)
+5|code|						.timeout(30*1000)
+5|code|						.end docpad.checkRequest complete
+0|empty|
+2|comment|		# Chain
+2|code|		next?()
+2|code|		@
+0|empty|
+0|empty|
+1|comment|	# =================================
+1|comment|	# Models and Collections
+0|empty|
+1|comment|	# ---------------------------------
+1|comment|	# b/c compat functions
+0|empty|
+1|comment|	# Create File
+1|prop|	createFile: (attrs={},opts={}) ->
+2|code|		opts.modelType = 'file'
+2|code|		return @createModel(attrs, opts)
+0|empty|
+1|comment|	# Create Document
+1|prop|	createDocument: (attrs={},opts={}) ->
+2|code|		opts.modelType = 'document'
+2|code|		return @createModel(attrs, opts)
+0|empty|
+1|comment|	# Parse File Directory
+1|prop|	parseFileDirectory: (opts={},next) ->
+2|code|		opts.modelType ?= 'file'
+2|code|		opts.collection ?= @getDatabase()
+2|code|		return @parseDirectory(opts, next)
+0|empty|
+1|comment|	# Parse Document Directory
+1|prop|	parseDocumentDirectory: (opts={},next) ->
+2|code|		opts.modelType ?= 'document'
+2|code|		opts.collection ?= @getDatabase()
+2|code|		return @parseDirectory(opts, next)
+0|empty|
+0|empty|
+1|comment|	# ---------------------------------
+1|comment|	# Standard functions
+0|empty|
+1|comment|	# Attach Model Events
+1|method|	attachModelEvents: (model) ->
+2|comment|		# Prepare
+2|code|		docpad = @
+0|empty|
+2|comment|		# Only attach events if we haven't already done so
+2|code|		if model.attachedDocumentEvents isnt true
+3|code|			model.attachedDocumentEvents = true
+0|empty|
+3|code|			# Attach document events
+3|code|			if model.type is 'document'
+4|code|				# Clone
+4|code|				model.on 'clone', (clonedModel) ->
+5|code|					docpad.attachModelEvents(clonedModel)
+0|empty|
+4|code|				# Render
+4|code|				model.on 'render', (args...) ->
+5|code|					docpad.emitSerial('render', args...)
+0|empty|
+4|code|				# Render document
+4|code|				model.on 'renderDocument', (args...) ->
+5|code|					docpad.emitSerial('renderDocument', args...)
+0|empty|
+4|code|				# Fetch a layout
+4|code|				model.on 'getLayout', (opts={},next) ->
+5|code|					opts.collection = docpad.getCollection('layouts')
+5|code|					layout = docpad.getFileBySelector(opts.selector, opts)
+5|code|					next(null, {layout})
+0|empty|
+3|code|			# Remove
+3|code|			#model.on 'remove', (file) ->
+3|code|			#	docpad.getDatabase().remove(file)
+3|code|			# ^ Commented out as for some reason this stops layouts from working
+0|empty|
+3|code|			# Error
+3|code|			model.on 'error', (args...) ->
+4|code|				docpad.error(args...)
+0|empty|
+3|code|			# Log
+3|code|			model.on 'log', (args...) ->
+4|code|				docpad.log(args...)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Add Model
+1|prop|	addModel: (model, opts) ->
+2|code|		model = @createModel(model, opts)
+2|code|		@getDatabase().add(model)
+2|code|		return model
+0|empty|
+1|comment|	# Add Models
+1|prop|	addModels: (models, opts) ->
+2|code|		models = @createModels(models, opts)
+2|code|		@getDatabase().add(models)
+2|code|		return models
+0|empty|
+1|comment|	# Create Models
+1|prop|	createModels: (models, opts) ->
+2|code|		for model in models
+3|code|			@createModel(model, opts)
+2|comment|		# return the for loop results
+0|empty|
+1|comment|	# Create Model
+1|prop|	createModel: (attrs={},opts={}) ->
+2|comment|		# Check
+2|code|		if attrs instanceof FileModel
+3|code|			return attrs
+0|empty|
+2|comment|		# Prepare
+2|code|		docpad = @
+2|code|		config = @getConfig()
+2|code|		database = @getDatabase()
+2|code|		fileFullPath = attrs.fullPath or null
+0|empty|
+0|empty|
+2|comment|		# Find or create
+2|comment|		# This functionality use to be inside ensureModel
+2|comment|		# But that caused duplicates in some instances
+2|comment|		# So now we will always check
+2|code|		if attrs.fullPath
+3|code|			result = database.findOne(fullPath: attrs.fullPath)
+3|code|			if result
+4|code|				return result
+0|empty|
+0|empty|
+2|comment|		# -----------------------------
+2|comment|		# Try and determine the model type
+0|empty|
+2|comment|		# If the type hasn't been specified try and detemrine it based on the full path
+2|code|		if fileFullPath
+3|code|			# Check if we have a document or layout
+3|code|			unless opts.modelType
+4|code|				for dirPath in config.documentsPaths.concat(config.layoutsPaths)
+5|code|					if fileFullPath.indexOf(dirPath) is 0
+5|code|						attrs.relativePath or= fileFullPath.replace(dirPath, '').replace(/^[\/\\]/,'')
+5|code|						opts.modelType = 'document'
+5|code|						break
+0|empty|
+3|code|			# Check if we have a file
+3|code|			unless opts.modelType
+4|code|				for dirPath in config.filesPaths
+5|code|					if fileFullPath.indexOf(dirPath) is 0
+5|code|						attrs.relativePath or= fileFullPath.replace(dirPath, '').replace(/^[\/\\]/,'')
+5|code|						opts.modelType = 'file'
+5|code|						break
+0|empty|
+2|comment|		# -----------------------------
+2|comment|		# Create the appropriate emodel
+0|empty|
+2|comment|		# Extend the opts with things we need
+2|code|		opts = extendr.extend({
+3|code|			detectEncoding: config.detectEncoding
+3|code|			rootOutDirPath: config.outPath
+2|code|		}, opts)
+0|empty|
+2|code|		if opts.modelType is 'file'
+3|code|			# Create a file model
+3|code|			model = new FileModel(attrs, opts)
+2|code|		else
+3|code|			# Create document model
+3|code|			model = new DocumentModel(attrs, opts)
+0|empty|
+2|comment|		# -----------------------------
+2|comment|		# Finish up
+0|empty|
+2|comment|		# Attach Events
+2|code|		@attachModelEvents(model)
+0|empty|
+2|comment|		# Return
+2|code|		return model
+0|empty|
+1|comment|	# Parse a directory
+1|comment|	# next(err, files)
+1|prop|	parseDirectory: (opts={},next) ->
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts, next)
+2|code|		docpad = @
+2|code|		locale = @getLocale()
+0|empty|
+2|comment|		# Extract
+2|code|		{path,createFunction} = opts
+2|code|		createFunction ?= @createModel
+2|code|		files = opts.collection or new FilesCollection()
+0|empty|
+2|comment|		# Check if the directory exists
+2|code|		safefs.exists path, (exists) ->
+3|code|			# Check
+3|code|			unless exists
+4|code|				# Log
+4|code|				docpad.log 'debug', util.format(locale.renderDirectoryNonexistant, path)
+0|empty|
+4|code|				# Forward
+4|code|				return next()
+0|empty|
+3|code|			# Log
+3|code|			docpad.log 'debug', util.format(locale.renderDirectoryParsing, path)
+0|empty|
+3|code|			# Files
+3|code|			docpad.scandir(
+4|code|				# Path
+4|code|				path: path
+0|empty|
+4|code|				# File Action
+4|code|				fileAction: (fileFullPath,fileRelativePath,nextFile,fileStat) ->
+5|code|					# Prepare
+5|code|					data =
+5|code|						fullPath: fileFullPath
+5|code|						relativePath: fileRelativePath
+5|code|						stat: fileStat
+0|empty|
+5|code|					# Create file
+5|code|					file = createFunction.call(docpad, data, opts)
+0|empty|
+5|code|					# Update the file's stat
+5|code|					# To ensure changes files are handled correctly in generation
+5|code|					file.action 'load', (err) ->
+5|code|						# Error?
+5|code|						return nextFile(err)  if err
+0|empty|
+5|code|						# Add the file to the collection
+5|code|						files.add(file)
+0|empty|
+5|code|						# Next
+5|code|						nextFile()
+0|empty|
+4|code|				# Next
+4|code|				next: (err) ->
+5|code|					# Check
+5|code|					return next(err)  if err
+0|empty|
+5|code|					# Log
+5|code|					docpad.log 'debug', util.format(locale.renderDirectoryParsed, path)
+0|empty|
+5|code|					# Forward
+5|code|					return next(null, files)
+3|code|			)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+0|empty|
+1|comment|	# =================================
+1|comment|	# Plugins
+0|empty|
+1|comment|	# Get a plugin by it's name
+1|method|	getPlugin: (pluginName) ->
+2|code|		@loadedPlugins[pluginName]
+0|empty|
+1|comment|	# Check if we have any plugins
+1|method|	hasPlugins: ->
+2|code|		return typeChecker.isEmptyObject(@loadedPlugins) is false
+0|empty|
+1|comment|	# Destroy plugins
+1|method|	destroyPlugins: ->
+2|code|		for own name,plugin of @loadedPlugins
+3|code|			plugin.destroy()
+3|code|			@loadedPlugins[name] = null
+2|code|		@
+0|empty|
+1|comment|	# Load Plugins
+1|comment|	# next(err)
+1|method|	loadPlugins: (next) ->
+2|comment|		# Prepare
+2|code|		docpad = @
+2|code|		locale = @getLocale()
+0|empty|
+2|comment|		# Snore
+2|code|		@slowPlugins = {}
+2|code|		snore = balUtil.createSnore ->
+3|code|			docpad.log 'notice', util.format(locale.pluginsSlow, Object.keys(docpad.slowPlugins).join(', '))
+0|empty|
+2|comment|		# Async
+2|code|		tasks = new TaskGroup "loadPlugins tasks", concurrency:0, next:(err) ->
+3|code|			docpad.slowPlugins = {}
+3|code|			snore.clear()
+3|code|			return next(err)
+0|empty|
+2|comment|		# Load website plugins
+2|code|		(@config.pluginsPaths or []).forEach (pluginsPath) ->
+3|code|			tasks.addTask "load the website's plugins at: #{pluginsPath}", (complete) ->
+4|code|				safefs.exists pluginsPath, (exists) ->
+5|code|					return complete()  unless exists
+5|code|					docpad.loadPluginsIn(pluginsPath, complete)
+0|empty|
+2|comment|		# Load specific plugins
+2|code|		(@config.pluginPaths or []).forEach (pluginPath) ->
+3|code|			tasks.addTask "load custom plugins at: #{pluginPath}", (complete) ->
+4|code|				safefs.exists pluginPath, (exists) ->
+5|code|					return complete()  unless exists
+5|code|					docpad.loadPlugin(pluginPath, complete)
+0|empty|
+2|comment|		# Execute the loading asynchronously
+2|code|		tasks.run()
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Loaded Plugin
+1|comment|	# Checks if a plugin was loaded succesfully
+1|comment|	# next(err,loaded)
+1|prop|	loadedPlugin: (pluginName,next) ->
+2|comment|		# Prepare
+2|code|		docpad = @
+0|empty|
+2|comment|		# Check
+2|code|		loaded = docpad.loadedPlugins[pluginName]?
+2|code|		next(null,loaded)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Load PLugin
+1|comment|	# next(err)
+1|prop|	loadPlugin: (fileFullPath,_next) ->
+2|comment|		# Prepare
+2|code|		docpad = @
+2|code|		config = @getConfig()
+2|code|		locale = @getLocale()
+2|code|		next = (err) ->
+3|code|			# Remove from slow plugins
+3|code|			delete docpad.slowPlugins[pluginName]
+3|code|			# Forward
+3|code|			return _next(err)
+0|empty|
+2|comment|		# Prepare variables
+2|code|		loader = new PluginLoader(
+3|code|			dirPath: fileFullPath
+3|code|			docpad: @
+3|code|			BasePlugin: BasePlugin
+2|code|		)
+2|code|		pluginName = loader.pluginName
+2|code|		enabled = (
+3|code|			(config.enableUnlistedPlugins  and  config.enabledPlugins[pluginName]? is false)  or
+3|code|			config.enabledPlugins[pluginName] is true
+2|code|		)
+0|empty|
+2|comment|		# If we've already been loaded, then exit early as there is no use for us to load again
+2|code|		if docpad.loadedPlugins[pluginName]?
+3|code|			# However we probably want to reload the configuration as perhaps the user or environment configuration has changed
+3|code|			docpad.loadedPlugins[pluginName].setConfig()
+3|code|			# Complete
+3|code|			return _next()
+0|empty|
+2|comment|		# Add to loading stores
+2|code|		docpad.slowPlugins[pluginName] = true
+0|empty|
+2|comment|		# Check
+2|code|		unless enabled
+3|code|			# Skip
+3|code|			docpad.log 'debug', util.format(locale.pluginSkipped, pluginName)
+3|code|			return next()
+2|code|		else
+3|code|			# Load
+3|code|			docpad.log 'debug', util.format(locale.pluginLoading, pluginName)
+0|empty|
+3|code|			# Check existance
+3|code|			loader.exists (err,exists) ->
+4|code|				# Error or doesn't exist?
+4|code|				return next(err)  if err or not exists
+0|empty|
+4|code|				# Check support
+4|code|				loader.unsupported (err,unsupported) ->
+5|code|					# Error?
+5|code|					return next(err)  if err
+0|empty|
+5|code|					# Unsupported?
+5|code|					if unsupported
+5|code|						# Version?
+5|code|						if unsupported in ['version-docpad','version-plugin'] and config.skipUnsupportedPlugins is false
+5|code|							docpad.log 'warn', util.format(locale.pluginContinued, pluginName)
+5|code|						else
+5|code|							# Type?
+5|code|							if unsupported is 'type'
+5|code|								docpad.log 'debug', util.format(locale.pluginSkippedDueTo, pluginName, unsupported)
+0|empty|
+5|code|							# Something else?
+5|code|							else
+5|code|								docpad.log 'warn', util.format(locale.pluginSkippedDueTo, pluginName, unsupported)
+5|code|							return next()
+0|empty|
+5|code|					# Load the class
+5|code|					loader.load (err) ->
+5|code|						return next(err)  if err
+0|empty|
+5|code|						# Create an instance
+5|code|						loader.create {}, (err,pluginInstance) ->
+5|code|							return next(err)  if err
+0|empty|
+5|code|							# Add to plugin stores
+5|code|							docpad.loadedPlugins[loader.pluginName] = pluginInstance
+0|empty|
+5|code|							# Log completion
+5|code|							docpad.log 'debug', util.format(locale.pluginLoaded, pluginName)
+0|empty|
+5|code|							# Forward
+5|code|							return next()
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Load Plugins
+1|comment|	# next(err)
+1|prop|	loadPluginsIn: (pluginsPath, next) ->
+2|comment|		# Prepare
+2|code|		docpad = @
+2|code|		locale = @getLocale()
+0|empty|
+2|comment|		# Load Plugins
+2|code|		docpad.log 'debug', util.format(locale.pluginsLoadingFor, pluginsPath)
+2|code|		@scandir(
+3|code|			# Path
+3|code|			path: pluginsPath
+0|empty|
+3|code|			# Skip files
+3|code|			fileAction: false
+0|empty|
+3|code|			# Handle directories
+3|code|			dirAction: (fileFullPath,fileRelativePath,_nextFile) ->
+4|code|				# Prepare
+4|code|				pluginName = pathUtil.basename(fileFullPath)
+4|code|				return _nextFile(null, false)  if fileFullPath is pluginsPath
+4|code|				nextFile = (err,skip) ->
+5|code|					if err
+5|code|						message = util.format(locale.pluginFailedToLoad, pluginName, fileFullPath)+' '+locale.errorFollows
+5|code|						docpad.warn(message, err)
+5|code|					return _nextFile(null, skip)
+0|empty|
+4|code|				# Forward
+4|code|				docpad.loadPlugin fileFullPath, (err) ->
+5|code|					return nextFile(err, true)
+0|empty|
+3|code|			# Next
+3|code|			next: (err) ->
+4|code|				docpad.log 'debug', util.format(locale.pluginsLoadedFor, pluginsPath)
+4|code|				return next(err)
+2|code|		)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+0|empty|
+1|comment|	# =================================
+1|comment|	# Utilities
+0|empty|
+1|comment|	# ---------------------------------
+1|comment|	# Utilities: Misc
+0|empty|
+1|comment|	# Compare current DocPad version to the latest
+1|method|	compareVersion: ->
+2|comment|		# Prepare
+2|code|		docpad = @
+2|code|		config = @getConfig()
+2|code|		locale = @getLocale()
+0|empty|
+2|comment|		# Check
+2|code|		return @  if config.offline or !config.checkVersion
+0|empty|
+2|comment|		# Check
+2|code|		balUtil.packageCompare(
+3|code|			local: @packagePath
+3|code|			remote: config.latestPackageUrl
+3|code|			newVersionCallback: (details) ->
+4|code|				isLocalInstallation = docpadUtil.isLocalDocPadExecutable()
+4|code|				message = (if isLocalInstallation then locale.versionOutdatedLocal else locale.versionOutdatedGlobal)
+4|code|				currentVersion = 'v'+details.local.version
+4|code|				latestVersion = 'v'+details.remote.version
+4|code|				upgradeUrl = details.local.upgradeUrl or details.remote.installUrl or details.remote.homepage
+4|code|				messageFilled = util.format(message, currentVersion, latestVersion, upgradeUrl)
+4|code|				docpad.notify(latestVersion, title:locale.versionOutdatedNotification)
+4|code|				docpad.log('notice', messageFilled)
+2|code|		)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+0|empty|
+1|comment|	# ---------------------------------
+1|comment|	# Utilities: Exchange
+0|empty|
+1|comment|	# Get Exchange
+1|comment|	# Get the exchange data
+1|comment|	# Requires internet access
+1|comment|	# next(err,exchange)
+1|method|	getExchange: (next) ->
+2|comment|		# Prepare
+2|code|		docpad = @
+2|code|		config = @getConfig()
+2|code|		locale = @getLocale()
+0|empty|
+2|comment|		# Check if it is stored locally
+2|code|		return next(null, docpad.exchange)  if typeChecker.isEmptyObject(docpad.exchange) is false
+0|empty|
+2|comment|		# Offline?
+2|code|		return next(null, null)  if config.offline
+0|empty|
+2|comment|		# Log
+2|code|		docpad.log('info', locale.exchangeUpdate+' '+locale.pleaseWait)
+0|empty|
+2|comment|		# Otherwise fetch it from the exchangeUrl
+2|code|		exchangeUrl = config.exchangeUrl+'?version='+@version
+2|code|		docpad.loadConfigUrl exchangeUrl, (err,parsedData) ->
+3|code|			# Check
+3|code|			if err
+4|code|				locale = docpad.getLocale()
+4|code|				docpad.log('notice', locale.exchangeError+' '+locale.errgdorFollows, err)
+4|code|				return next()
+0|empty|
+3|code|			# Log
+3|code|			docpad.log('info', locale.exchangeUpdated)
+0|empty|
+3|code|			# Success
+3|code|			docpad.exchange = parsedData
+3|code|			return next(null, parsedData)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+0|empty|
+1|comment|	# ---------------------------------
+1|comment|	# Utilities: Files
+0|empty|
+1|comment|	# Contextualize files
+1|comment|	# next(err)
+1|prop|	contextualizeFiles: (opts={},next) ->
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts,next)
+2|code|		{collection,templateData} = opts
+2|code|		docpad = @
+2|code|		config = @getConfig()
+2|code|		locale = @getLocale()
+2|code|		slowFilesObject = {}
+2|code|		slowFilesTimer = null
+0|empty|
+2|comment|		# Update progress
+2|code|		opts.progress?.step("contextualizeFiles (preparing)").total(1).setTick(0)
+0|empty|
+2|comment|		# Log
+2|code|		docpad.log 'debug', util.format(locale.contextualizingFiles, collection.length)
+0|empty|
+2|comment|		# Start contextualizing
+2|code|		docpad.emitSerial 'contextualizeBefore', {collection,templateData}, (err) ->
+3|code|			# Prepare
+3|code|			return next(err)  if err
+0|empty|
+3|code|			# Completion callback
+3|code|			tasks = new TaskGroup "contextualizeFiles tasks", concurrency:0, next:(err) ->
+4|code|				# Kill the timer
+4|code|				clearInterval(slowFilesTimer)
+4|code|				slowFilesTimer = null
+0|empty|
+4|code|				# Check
+4|code|				return next(err)  if err
+0|empty|
+4|code|				# Update progress
+4|code|				opts.progress?.step("contextualizeFiles (postparing)").total(1).setTick(0)
+0|empty|
+4|code|				# After
+4|code|				docpad.emitSerial 'contextualizeAfter', {collection}, (err) ->
+5|code|					# Check
+5|code|					return next(err)  if err
+0|empty|
+5|code|					# Log
+5|code|					docpad.log 'debug', util.format(locale.contextualizedFiles, collection.length)
+0|empty|
+5|code|					# Forward
+5|code|					return next()
+0|empty|
+3|code|			# Add contextualize tasks
+3|code|			opts.progress?.step('contextualizeFiles').total(collection.length).setTick(0)
+3|code|			collection.forEach (file,index) ->
+4|code|				filePath = file.getFilePath()
+4|code|				slowFilesObject[file.id] = file.get('relativePath') or file.id
+4|code|				tasks.addTask "conextualizing: #{filePath}", (complete) ->
+5|code|					file.action 'contextualize', (err) ->
+5|code|						delete slowFilesObject[file.id]
+5|code|						opts.progress?.tick()
+5|code|						return complete(err)
+0|empty|
+3|code|			# Setup the timer
+3|code|			slowFilesTimer = setInterval(
+4|code|				->
+5|code|					slowFilesArray = (value or key  for own key,value of slowFilesObject)
+5|code|					docpad.log('info', util.format(locale.slowFiles, 'contextualizeFiles')+' \n'+slowFilesArray.join('\n'))
+4|code|				config.slowFilesDelay
+3|code|			)
+0|empty|
+3|code|			# Run tasks
+3|code|			tasks.run()
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Render files
+1|comment|	# next(err)
+1|prop|	renderFiles: (opts={},next) ->
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts,next)
+2|code|		{collection,templateData,renderPasses} = opts
+2|code|		docpad = @
+2|code|		config = @getConfig()
+2|code|		locale = @getLocale()
+2|code|		slowFilesObject = {}
+2|code|		slowFilesTimer = null
+0|empty|
+2|comment|		# Update progress
+2|code|		opts.progress?.step("renderFiles (preparing)").total(1).setTick(0)
+0|empty|
+2|comment|		# Log
+2|code|		docpad.log 'debug', util.format(locale.renderingFiles, collection.length)
+0|empty|
+2|comment|		# Render File
+2|comment|		# next(null, outContent, file)
+2|code|		renderFile = (file,next) ->
+3|code|			# Render
+3|code|			if file.get('render') is false or !file.get('relativePath')
+4|code|				file.attributes.rtime = new Date()
+4|code|				next(null, file.getOutContent(), file)
+3|code|			else
+4|code|				file.action('render', {templateData}, next)
+0|empty|
+3|code|			# Return
+3|code|			return file
+0|empty|
+2|comment|		# Render Collection
+2|code|		renderCollection = (collectionToRender,{renderPass},next) ->
+3|code|			# Plugin Event
+3|code|			docpad.emitSerial 'renderCollectionBefore', {collection:collectionToRender,renderPass}, (err) =>
+4|code|				# Prepare
+4|code|				return next(err)  if err
+0|empty|
+4|code|				subTasks = new TaskGroup "renderCollection: #{collectionToRender.options.name}", concurrency:0, next:(err) ->
+5|code|					# Prepare
+5|code|					return next(err)  if err
+0|empty|
+5|code|					# Plugin Event
+5|code|					docpad.emitSerial('renderCollectionAfter', {collection:collectionToRender,renderPass}, next)
+0|empty|
+4|code|				# Cycle
+4|code|				opts.progress?.step("renderFiles (pass #{renderPass})").total(collectionToRender.length).setTick(0)
+4|code|				collectionToRender.forEach (file) ->
+5|code|					filePath = file.getFilePath()
+5|code|					slowFilesObject[file.id] = file.get('relativePath')
+5|code|					subTasks.addTask "rendering: #{filePath}", (complete) ->
+5|code|						renderFile file, (err) ->
+5|code|							delete slowFilesObject[file.id] or file.id
+5|code|							opts.progress?.tick()
+5|code|							return complete(err)
+0|empty|
+4|code|				# Return
+4|code|				subTasks.run()
+4|code|				return collectionToRender
+0|empty|
+2|comment|		# Plugin Event
+2|code|		docpad.emitSerial 'renderBefore', {collection,templateData}, (err) =>
+3|code|			# Prepare
+3|code|			return next(err)  if err
+0|empty|
+3|code|			# Async
+3|code|			tasks = new TaskGroup "renderCollection: renderBefore tasks", next:(err) ->
+4|code|				# Kill the timer
+4|code|				clearInterval(slowFilesTimer)
+4|code|				slowFilesTimer = null
+0|empty|
+4|code|				# Check
+4|code|				return next(err)  if err
+0|empty|
+4|code|				# Update progress
+4|code|				opts.progress?.step("renderFiles (postparing)").total(1).setTick(0)
+0|empty|
+4|code|				# After
+4|code|				docpad.emitSerial 'renderAfter', {collection}, (err) ->
+5|code|					# Check
+5|code|					return next(err)  if err
+0|empty|
+5|code|					# Log
+5|code|					docpad.log 'debug', util.format(locale.renderedFiles, collection.length)
+0|empty|
+5|code|					# Forward
+5|code|					return next()
+0|empty|
+3|code|			# Queue the initial render
+3|code|			initialCollection = collection.findAll('referencesOthers':false)
+3|code|			subsequentCollection = null
+3|code|			tasks.addTask "rendering the initial collection", (complete) ->
+4|code|				renderCollection initialCollection, {renderPass:1}, (err) ->
+5|code|					return complete(err)  if err
+5|code|					subsequentCollection = collection.findAll('referencesOthers':true)
+5|code|					renderCollection(subsequentCollection, {renderPass:2}, complete)
+0|empty|
+3|code|			# Queue the subsequent renders
+3|code|			if renderPasses > 1
+4|code|				[3..renderPasses].forEach (renderPass) ->  tasks.addTask "rendering the subsequent collection index #{renderPass}", (complete) ->
+5|code|					renderCollection(subsequentCollection, {renderPass}, complete)
+0|empty|
+3|code|			# Setup the timer
+3|code|			slowFilesTimer = setInterval(
+4|code|				->
+5|code|					slowFilesArray = (value or key  for own key,value of slowFilesObject)
+5|code|					docpad.log('info', util.format(locale.slowFiles, 'renderFiles')+' \n'+slowFilesArray.join('\n'))
+4|code|				config.slowFilesDelay
+3|code|			)
+0|empty|
+3|code|			# Run tasks
+3|code|			tasks.run()
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Write files
+1|comment|	# next(err)
+1|prop|	writeFiles: (opts={},next) ->
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts,next)
+2|code|		{collection,templateData} = opts
+2|code|		docpad = @
+2|code|		config = @getConfig()
+2|code|		locale = @getLocale()
+2|code|		slowFilesObject = {}
+2|code|		slowFilesTimer = null
+0|empty|
+2|comment|		# Update progress
+2|code|		opts.progress?.step("writeFiles (preparing)").total(1).setTick(0)
+0|empty|
+2|comment|		# Log
+2|code|		docpad.log 'debug', util.format(locale.writingFiles, collection.length)
+0|empty|
+2|comment|		# Plugin Event
+2|code|		docpad.emitSerial 'writeBefore', {collection,templateData}, (err) =>
+3|code|			# Prepare
+3|code|			return next(err)  if err
+0|empty|
+3|code|			# Completion callback
+3|code|			tasks = new TaskGroup "writeFiles tasks", concurrency:0, next:(err) ->
+4|code|				# Kill the timer
+4|code|				clearInterval(slowFilesTimer)
+4|code|				slowFilesTimer = null
+0|empty|
+4|code|				# Check
+4|code|				return next(err)  if err
+0|empty|
+4|code|				# Update progress
+4|code|				opts.progress?.step("writeFiles (postparing)").total(1).setTick(0)
+0|empty|
+4|code|				# After
+4|code|				docpad.emitSerial 'writeAfter', {collection}, (err) ->
+5|code|					# Check
+5|code|					return next(err)  if err
+0|empty|
+5|code|					# docpad.log 'debug', util.format(locale.wroteFiles, collection.length)
+5|code|					return next()
+0|empty|
+3|code|			# Add write tasks
+3|code|			opts.progress?.step('writeFiles').total(collection.length).setTick(0)
+3|code|			collection.forEach (file,index) ->
+4|code|				filePath = file.getFilePath()
+4|code|				tasks.addTask "writing the file: #{filePath}", (complete) ->
+5|code|					# Prepare
+5|code|					slowFilesObject[file.id] = file.get('relativePath')
+0|empty|
+5|code|					# Create sub tasks
+5|code|					fileTasks = new TaskGroup "tasks for file write: #{filePath}", concurrency:0, next:(err) ->
+5|code|						delete slowFilesObject[file.id]
+5|code|						opts.progress?.tick()
+5|code|						return complete(err)
+0|empty|
+5|code|					# Write out
+5|code|					if file.get('write') isnt false and file.get('dynamic') isnt true and file.get('outPath')
+5|code|						fileTasks.addTask "write out", (complete) ->
+5|code|							file.action('write', complete)
+0|empty|
+5|code|					# Write source
+5|code|					if file.get('writeSource') is true and file.get('fullPath')
+5|code|						fileTasks.addTask "write source", (complete) ->
+5|code|							file.action('writeSource', complete)
+0|empty|
+5|code|					# Run sub tasks
+5|code|					fileTasks.run()
+0|empty|
+3|code|			# Setup the timer
+3|code|			slowFilesTimer = setInterval(
+4|code|				->
+5|code|					slowFilesArray = (value or key  for own key,value of slowFilesObject)
+5|code|					docpad.log('info', util.format(locale.slowFiles, 'writeFiles')+' \n'+slowFilesArray.join('\n'))
+4|code|				config.slowFilesDelay
+3|code|			)
+0|empty|
+3|code|			# Run tasks
+3|code|			tasks.run()
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+0|empty|
+1|comment|	# ---------------------------------
+1|comment|	# Generate
+0|empty|
+1|comment|	# Generate Helpers
+1|prop|	generateStarted: null
+1|prop|	generateEnded: null
+1|prop|	generating: false
+1|prop|	generated: false  # true once the first generation has occured
+0|empty|
+1|comment|	# Create Progress Bar
+1|method|	createProgress: ->
+2|comment|		# Prepare
+2|code|		docpad = @
+2|code|		config = docpad.getConfig()
+0|empty|
+2|comment|		# Only show progress if
+2|comment|		# - prompts are supported (so no servers)
+2|comment|		# - and we are log level 6 (the default level)
+2|code|		progress = null
+2|code|		if config.prompts and @getLogLevel() is 6
+3|code|			progress = require('progressbar').create()
+3|code|			@getLoggers().console.unpipe(process.stdout)
+3|code|			@getLogger().once 'log', progress.logListener ?= (data) ->
+4|code|				if data.levelNumber <= 5  # notice or higher
+5|code|					docpad.destroyProgress(progress)
+0|empty|
+2|comment|		# Return
+2|code|		return progress
+0|empty|
+1|comment|	# Destroy Progress Bar
+1|method|	destroyProgress: (progress) ->
+2|comment|		# Fetch
+2|code|		if progress
+3|code|			progress.finish()
+3|code|			@getLoggers().console.unpipe(process.stdout).pipe(process.stdout)
+0|empty|
+2|comment|		# Return
+2|code|		return progress
+0|empty|
+1|comment|	# Destroy Regenerate Timer
+1|method|	destroyRegenerateTimer: ->
+2|comment|		# Prepare
+2|code|		docpad = @
+0|empty|
+2|comment|		# Clear Regenerate Timer
+2|code|		if docpad.regenerateTimer
+3|code|			clearInterval(docpad.regenerateTimer)
+3|code|			docpad.regenerateTimer = null
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Create Regenerate Timer
+1|method|	createRegenerateTimer: ->
+2|comment|		# Prepare
+2|code|		docpad = @
+2|code|		locale = docpad.getLocale()
+2|code|		config = docpad.getConfig()
+0|empty|
+2|comment|		# Create Regenerate Timer
+2|code|		if config.regenerateEvery
+3|code|			docpad.regenerateTimer = setTimeout(
+4|code|				->
+5|code|					docpad.log('info', locale.renderInterval)
+5|code|					docpad.action('generate', config.regenerateEveryOptions)
+4|code|				config.regenerateEvery
+3|code|			)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Generate
+1|comment|	# next(err)
+1|prop|	generate: (opts, next) =>
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts,next)
+2|code|		docpad = @
+2|code|		config = docpad.getConfig()
+2|code|		locale = docpad.getLocale()
+2|code|		database = docpad.getDatabase()
+0|empty|
+2|comment|		# Check
+2|code|		return next()  if opts.collection?.length is 0
+0|empty|
+0|empty|
+2|comment|		# Update generating flag
+2|code|		lastGenerateStarted = docpad.generateStarted
+2|code|		docpad.generateStarted = new Date()
+2|code|		docpad.generateEnded = null
+2|code|		docpad.generating = true
+0|empty|
+2|comment|		# Update the cached database
+2|code|		docpad.databaseTempCache = new FilesCollection(database.models)  if database.models.length
+0|empty|
+2|comment|		# Create Progress
+2|comment|		# Can be over-written by API calls
+2|code|		opts.progress ?= docpad.createProgress()
+0|empty|
+2|comment|		# Grab the template data we will use for rendering
+2|code|		opts.templateData = docpad.getTemplateData(opts.templateData or {})
+0|empty|
+2|comment|		# How many render passes will we require?
+2|comment|		# Can be over-written by API calls
+2|code|		opts.renderPasses or= config.renderPasses
+0|empty|
+0|empty|
+2|comment|		# Destroy Regenerate Timer
+2|code|		docpad.destroyRegenerateTimer()
+0|empty|
+2|comment|		# Check plugin count
+2|code|		docpad.log('notice', locale.renderNoPlugins)  unless docpad.hasPlugins()
+0|empty|
+2|comment|		# Log
+2|code|		docpad.log('info', locale.renderGenerating)
+2|code|		docpad.notify (new Date()).toLocaleTimeString(), title: locale.renderGeneratingNotification
+0|empty|
+0|empty|
+2|comment|		# Tasks
+2|code|		tasks = new TaskGroup("generate tasks")
+0|empty|
+3|code|			.on('item.run', (item) ->
+4|code|				totals = tasks.getTotals()
+4|code|				opts.progress?.step("generate: #{item.getConfig().name}").total(totals.total).setTick(totals.completed)
+3|code|			)
+0|empty|
+3|code|			.once('complete', (err) ->
+4|code|				# Update generating flag
+4|code|				docpad.generating = false
+4|code|				docpad.generateEnded = new Date()
+0|empty|
+4|code|				# Update caches
+4|code|				docpad.databaseTempCache = null
+0|empty|
+4|code|				# Create Regenerate Timer
+4|code|				docpad.createRegenerateTimer()
+0|empty|
+4|code|				# Clear Progress
+4|code|				if opts.progress
+5|code|					docpad.destroyProgress(opts.progress)
+5|code|					opts.progress = null
+0|empty|
+4|code|				# Error?
+4|code|				return next(err)  if err
+0|empty|
+4|code|				# Log success message
+4|code|				seconds = (docpad.generateEnded - docpad.generateStarted) / 1000
+4|code|				howMany = "#{opts.collection?.length or 0}/#{database.length}"
+4|code|				docpad.log 'info', util.format(locale.renderGenerated, howMany, seconds)
+4|code|				docpad.notify (new Date()).toLocaleTimeString(), {title: locale.renderGeneratedNotification}
+0|empty|
+4|code|				# Generated
+4|code|				if opts.initial is true
+5|code|					docpad.generated = true
+5|code|					return docpad.emitSerial('generated', opts, next)
+0|empty|
+4|code|				# Safety check if generated is false but initial was false too
+4|code|				# https://github.com/bevry/docpad/issues/811
+4|code|				else if docpad.generated is false
+5|code|					return next(
+5|code|						new Error('DocPad is in an invalid state, please report this on the github issue tracker. Reference 3360')
+5|code|					)
+0|empty|
+4|code|				else
+5|code|					return next()
+3|code|			)
+0|empty|
+2|comment|		# Extract functions from tasks for simplicity
+2|comment|		# when dealing with nested tasks/groups
+2|code|		addGroup = tasks.addGroup.bind(tasks)
+2|code|		addTask = tasks.addTask.bind(tasks)
+0|empty|
+0|empty|
+2|comment|		# Setup a clean database
+2|code|		addTask 'Reset our collections', (complete) ->
+3|code|			# Skip if we are not a reset generation, or an initial generation (generated is false)
+3|code|			return complete()  unless opts.reset is true or docpad.generated is false
+3|code|			return docpad.resetCollections(opts, complete)
+0|empty|
+0|empty|
+2|comment|		# Figure out the options
+2|comment|		# This is here as resetCollections could change our state
+2|comment|		# https://github.com/bevry/docpad/issues/811
+2|code|		addTask 'Figure out options', ->
+3|code|			# Mode: Cache
+3|code|			# Shall we write to the database cache?
+3|code|			# Set to true if the configuration option says we can, and we are the initial generation
+3|code|			opts.cache     ?= config.databaseCache
+0|empty|
+3|code|			# Mode: Initial
+3|code|			# Shall we do some basic initial checks
+3|code|			# Set to the opts.reset value if specified, or whether are the initial generation
+3|code|			opts.initial   ?= !(docpad.generated)
+0|empty|
+3|code|			# Mode: Reset
+3|code|			# Shall we reset the database
+3|code|			# Set to true if we are the initial generation
+3|code|			opts.reset     ?= opts.initial
+0|empty|
+3|code|			# Mode: Populate
+3|code|			# Shall we fetch in new data?
+3|code|			# Set to the opts.reset value if specified, or the opts.initial value
+3|code|			opts.populate  ?= opts.reset
+0|empty|
+3|code|			# Mode: Reload
+3|code|			# Shall we rescan the file system for changes?
+3|code|			# Set to the opts.reset value if specified, or the opts.initial value
+3|code|			opts.reload    ?= opts.reset
+0|empty|
+3|code|			# Mode: Partial
+3|code|			# Shall we perform a partial generation (false) or a completion generation (true)?
+3|code|			# Set to false if we are the initial generation
+3|code|			opts.partial   ?= !(opts.reset)
+0|empty|
+3|code|			# Log our opts
+3|code|			docpad.log('debug', 'Generate options:', _.pick(opts, 'cache', 'initial', 'reset', 'populate', 'reload', 'partial', 'renderPasses'))
+0|empty|
+0|empty|
+2|comment|		# Check directory structure
+2|code|		addTask 'check source directory exists', (complete) ->
+3|code|			# Skip if we are not the initial generation
+3|code|			return complete()  unless opts.initial is true
+0|empty|
+3|code|			# Continue if we are the initial generation
+3|code|			safefs.exists config.srcPath, (exists) ->
+4|code|				# Check
+4|code|				unless exists
+5|code|					err = new Error(locale.renderNonexistant)
+5|code|					return complete(err)
+0|empty|
+4|code|				# Forward
+4|code|				return complete()
+0|empty|
+0|empty|
+2|code|		addGroup 'fetch data to render', (addGroup, addTask) ->
+3|code|			# Fetch new data
+3|code|			# If we are a populate generation (by default an initial generation)
+3|code|			if opts.populate is true
+4|code|				# This will pull in new data from plugins
+4|code|				addTask 'populateCollectionsBefore', (complete) ->
+5|code|					docpad.emitSerial('populateCollectionsBefore', opts, complete)
+0|empty|
+4|code|				# Import the cached data
+4|code|				# If we are the initial generation, and we have caching enabled
+4|code|				if opts.initial is true and opts.cache in [true, 'read']
+5|code|					addTask 'import data from cache', (complete) ->
+5|code|						# Check if we do have a databae cache
+5|code|						safefs.exists config.databaseCachePath, (exists) ->
+5|code|							return complete()  if exists is false
+0|empty|
+5|code|							# Read the database cache if it exists
+5|code|							safefs.readFile config.databaseCachePath, (err, data) ->
+5|code|								return complete(err)  if err
+0|empty|
+5|code|								# Parse it and apply the data values
+5|code|								databaseData = JSON.parse data.toString()
+5|code|								opts.cache     = true
+5|code|								opts.initial   = true
+5|code|								opts.reset     = false
+5|code|								opts.populate  = true
+5|code|								opts.reload    = true
+5|code|								opts.partial   = true
+0|empty|
+5|code|								lastGenerateStarted = new Date(databaseData.generateStarted)
+5|code|								addedModels = docpad.addModels(databaseData.models)
+5|code|								docpad.log 'info', util.format(locale.databaseCacheRead, database.length, databaseData.models.length)
+0|empty|
+5|code|								# @TODO we need a way of detecting deleted files between generations
+0|empty|
+5|code|								return complete()
+0|empty|
+4|code|				# Rescan the file system
+4|code|				# If we are a reload generation (by default an initial generation)
+4|code|				# This is useful when the database is out of sync with the source files
+4|code|				# For instance, someone shut down docpad, and made some changes, then ran docpad again
+4|code|				# See https://github.com/bevry/docpad/issues/705#issuecomment-29243666 for details
+4|code|				if opts.reload is true
+5|code|					addGroup 'import data from file system', (addGroup, addTask) ->
+5|code|						# Documents
+5|code|						config.documentsPaths.forEach (documentsPath) ->
+5|code|							addTask 'import documents', (complete) ->
+5|code|								docpad.parseDirectory({
+5|code|									modelType: 'document'
+5|code|									collection: database
+5|code|									path: documentsPath
+5|code|									next: complete
+5|code|								})
+0|empty|
+5|code|						# Files
+5|code|						config.filesPaths.forEach (filesPath) ->
+5|code|							addTask 'import files', (complete) ->
+5|code|								docpad.parseDirectory({
+5|code|									modelType: 'file'
+5|code|									collection: database
+5|code|									path: filesPath
+5|code|									next: complete
+5|code|								})
+0|empty|
+5|code|						# Layouts
+5|code|						config.layoutsPaths.forEach (layoutsPath) ->
+5|code|							addTask 'import layouts', (complete) ->
+5|code|								docpad.parseDirectory({
+5|code|									modelType: 'document'
+5|code|									collection: database
+5|code|									path: layoutsPath
+5|code|									next: complete
+5|code|								})
+0|empty|
+4|code|				# This will pull in new data from plugins
+4|code|				addTask 'populateCollections', (complete) ->
+5|code|					docpad.emitSerial('populateCollections', opts, complete)
+0|empty|
+0|empty|
+2|code|		addGroup 'determine files to render', (addGroup, addTask) ->
+3|code|			# Perform a complete regeneration
+3|code|			# If we are a reset generation (by default an initial non-cached generation)
+3|code|			if opts.partial is false
+4|code|				# Use Entire Collection
+4|code|				addTask 'Add all database models to render queue', ->
+5|code|					opts.collection ?= new FilesCollection().add(docpad.getCollection('generate').models)
+0|empty|
+3|code|			# Perform a partial regeneration
+3|code|			# If we are not a reset generation (by default any non-initial generation)
+3|code|			else
+4|code|				# Use Partial Collection
+4|code|				addTask 'Add only changed models to render queue', ->
+5|code|					changedQuery =
+5|code|						$or:
+5|code|							# Get changed files
+5|code|							mtime: $gte: lastGenerateStarted
+0|empty|
+5|code|							# Get new files
+5|code|							$and:
+5|code|								wtime: null
+5|code|								write: true
+5|code|					opts.collection ?= new FilesCollection().add(docpad.getCollection('generate').findAll(changedQuery).models)
+0|empty|
+0|empty|
+2|code|		addTask 'generateBefore', (complete) ->
+3|code|			# Exit if we have nothing to generate
+3|code|			return tasks.exit()  if opts.collection.length is 0
+0|empty|
+3|code|			# Otherwise continue down the task loop
+3|code|			docpad.emitSerial('generateBefore', opts, complete)
+0|empty|
+0|empty|
+2|code|		addTask 'prepare files', (complete) ->
+3|code|			# Log the files to generate if we are in debug mode
+3|code|			docpad.log 'debug', 'Files to generate at', (lastGenerateStarted), '\n', (
+4|code|				{
+5|code|					id: model.id
+5|code|					path: model.getFilePath()
+5|code|					mtime: model.get('mtime')
+5|code|					wtime: model.get('wtime')
+5|code|					dynamic: model.get('dynamic')
+5|code|					ignored: model.get('ignored')
+5|code|					write: model.get('write')
+4|code|				}  for model in opts.collection.models
+3|code|			)
+0|empty|
+3|code|			# Add anything that references other documents (e.g. partials, listing, etc)
+3|code|			# This could eventually be way better
+3|code|			standalones = opts.collection.pluck('standalone')
+3|code|			allStandalone = standalones.indexOf(false) is -1
+3|code|			if allStandalone is false
+4|code|				opts.collection.add(docpad.getCollection('referencesOthers').models)
+0|empty|
+3|code|			# Deeply/recursively add the layout children
+3|code|			addLayoutChildren = (collection) ->
+4|code|				collection.forEach (file) ->
+5|code|					if file.get('isLayout') is true
+5|code|						# Find
+5|code|						layoutChildrenQuery =
+5|code|							layoutRelativePath: file.get('relativePath')
+5|code|						layoutChildrenCollection = docpad.getCollection('hasLayout').findAll(layoutChildrenQuery)
+0|empty|
+5|code|						# Log the files to generate if we are in debug mode
+5|code|						docpad.log 'debug', 'Layout children to generate at', (lastGenerateStarted), '\n', (
+5|code|							{
+5|code|								id: model.id
+5|code|								path: model.getFilePath()
+5|code|								mtime: model.get('mtime')
+5|code|								wtime: model.get('wtime')
+5|code|								write: model.get('write')
+5|code|							}  for model in layoutChildrenCollection.models
+5|code|						), '\n', layoutChildrenQuery
+0|empty|
+5|code|						# Recurse
+5|code|						addLayoutChildren(layoutChildrenCollection)
+0|empty|
+5|code|						# Add
+5|code|						opts.collection.add(layoutChildrenCollection.models)
+3|code|			addLayoutChildren(opts.collection)
+0|empty|
+3|code|			# Filter out ignored, and no-render no-write files
+3|code|			opts.collection.reset opts.collection.reject (file) ->
+4|code|				return (file.get('render') is false and file.get('write') is false)
+0|empty|
+3|code|			# Log the files to generate if we are in debug mode
+3|code|			docpad.log 'debug', 'Files to generate at', (lastGenerateStarted), '\n', (
+4|code|				{
+5|code|					id: model.id
+5|code|					path: model.getFilePath()
+5|code|					mtime: model.get('mtime')
+5|code|					wtime: model.get('wtime')
+5|code|					dynamic: model.get('dynamic')
+5|code|					ignored: model.get('ignored')
+5|code|					write: model.get('write')
+4|code|				}  for model in opts.collection.models
+3|code|			)
+0|empty|
+3|code|			# Forward
+3|code|			return complete()
+0|empty|
+0|empty|
+2|code|		addGroup 'process file', (addGroup, addTask) ->
+3|code|			addTask 'contextualizeFiles', {args:[opts]}, docpad.contextualizeFiles.bind(docpad)
+3|code|			addTask 'renderFiles', {args:[opts]}, docpad.renderFiles.bind(docpad)
+3|code|			addTask 'writeFiles', {args:[opts]}, docpad.writeFiles.bind(docpad)
+0|empty|
+0|empty|
+2|code|		addTask 'generateAfter', (complete) ->
+3|code|			docpad.emitSerial('generateAfter', opts, complete)
+0|empty|
+0|empty|
+2|comment|		# Write the cache file
+2|code|		addTask 'Write the database cache', (complete) ->
+3|code|			# Skip if we do not care for writing the cache
+3|code|			return complete()  unless opts.cache in [true, 'write']
+0|empty|
+3|code|			# Write the cache
+3|code|			databaseData =
+4|code|				generateStarted: docpad.generateStarted
+4|code|				generateEnded: docpad.generateEnded
+4|code|				models: (model.getAttributes()  for model in database.models)
+3|code|			databaseDataDump = JSON.stringify(databaseData, null, '  ')
+3|code|			docpad.log 'info', util.format(locale.databaseCacheWrite, databaseData.models.length)
+3|code|			return safefs.writeFile(config.databaseCachePath, databaseDataDump, complete)
+0|empty|
+0|empty|
+2|comment|		# Run
+2|code|		tasks.run()
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+0|empty|
+1|comment|	# ---------------------------------
+1|comment|	# Render
+0|empty|
+1|comment|	# Load a Document
+1|comment|	# next(err,document)
+1|prop|	loadDocument: (document,opts,next) ->
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts,next)
+0|empty|
+2|comment|		# Load
+2|comment|		# @TODO: don't load if already loaded
+2|code|		document.action('load contextualize', opts, next)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Load and Render a Document
+1|comment|	# next(err,document)
+1|prop|	loadAndRenderDocument: (document,opts,next) ->
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts,next)
+2|code|		docpad = @
+0|empty|
+2|comment|		# Load
+2|code|		docpad.loadDocument document, opts, (err) ->
+3|code|			return next(err)  if err
+0|empty|
+3|code|			# Render
+3|code|			console.log('now render')
+3|code|			docpad.renderDocument(document, opts, next)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Render Document
+1|comment|	# next(err,result)
+1|prop|	renderDocument: (document,opts,next) ->
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts,next)
+0|empty|
+2|comment|		# Render
+2|code|		clone = document.clone().action 'render', opts, (err) ->
+3|code|			result = clone.getOutContent()
+3|code|			return next(err, result, document)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Render Path
+1|comment|	# next(err,result)
+1|prop|	renderPath: (path,opts,next) ->
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts,next)
+2|code|		attributes = extendr.extend({
+3|code|			fullPath: path
+2|code|		},opts.attributes)
+0|empty|
+2|comment|		# Handle
+2|code|		document = @createDocument(attributes)
+2|code|		@loadAndRenderDocument(document, opts, next)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Render Data
+1|comment|	# next(err,result)
+1|prop|	renderData: (content,opts,next) ->
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts,next)
+2|code|		attributes = extendr.extend({
+3|code|			filename: opts.filename
+3|code|			data: content
+2|code|		}, opts.attributes)
+0|empty|
+2|comment|		# Handle
+2|code|		document = @createDocument(attributes)
+2|code|		@loadAndRenderDocument(document, opts, next)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Render Text
+1|comment|	# Doesn't extract meta information, or render layouts
+1|comment|	# TODO: Why not? Why not just have renderData?
+1|comment|	# next(err,result)
+1|prop|	renderText: (text,opts,next) ->
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts,next)
+2|code|		opts.actions ?= ['renderExtensions', 'renderDocument']
+2|code|		attributes = extendr.extend({
+3|code|			filename: opts.filename
+3|code|			data: text
+3|code|			body: text
+3|code|			content: text
+2|code|		}, opts.attributes)
+0|empty|
+2|comment|		# Handle
+2|code|		document = @createDocument(attributes)
+0|empty|
+2|comment|		# Render
+2|code|		clone = document.clone().action 'normalize contextualize render', opts, (err) ->
+3|code|			result = clone.getOutContent()
+3|code|			return next(err, result, document)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Render Action
+1|comment|	# next(err,document,result)
+1|prop|	render: (opts,next) =>
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts,next)
+2|code|		locale = @getLocale()
+0|empty|
+2|comment|		# Extract document
+2|code|		if opts.document
+3|code|			@renderDocument(opts.document, opts, next)
+2|code|		else if opts.data
+3|code|			@renderData(opts.data, opts, next)
+2|code|		else if opts.text
+3|code|			@renderText(opts.text, opts, next)
+2|code|		else
+3|code|			path = opts.path or opts.fullPath or opts.filename or null
+3|code|			if path
+4|code|				@renderPath(path, opts, next)
+3|code|			else
+4|code|				# Check
+4|code|				err = new Error(locale.renderInvalidOptions)
+4|code|				return next(err)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+0|empty|
+1|comment|	# ---------------------------------
+1|comment|	# Watch
+0|empty|
+1|comment|	# Watchers
+1|prop|	watchers: null
+0|empty|
+1|comment|	# Destroy Watchers
+1|method|	destroyWatchers: =>
+2|comment|		# Prepare
+2|code|		docpad = @
+0|empty|
+2|comment|		# Check
+2|code|		if docpad.watchers
+3|code|			# Close each of them
+3|code|			for watcher in docpad.watchers
+4|code|				watcher.close()
+0|empty|
+3|code|			# Reset the array
+3|code|			docpad.watchers = []
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Watch
+1|prop|	watch: (opts,next) =>
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts,next)
+2|code|		docpad = @
+2|code|		config = @getConfig()
+2|code|		locale = @getLocale()
+2|code|		database = @getDatabase()
+2|code|		@watchers ?= []
+0|empty|
+2|comment|		# Restart our watchers
+2|code|		restartWatchers = (next) ->
+3|code|			# Close our watchers
+3|code|			docpad.destroyWatchers()
+0|empty|
+3|code|			# Start a group
+3|code|			tasks = new TaskGroup("watch tasks", {concurrency:0, next})
+0|empty|
+3|code|			# Watch reload paths
+3|code|			reloadPaths = _.union(config.reloadPaths, config.configPaths)
+3|code|			tasks.addTask "watch reload paths", (complete) -> docpad.watchdir(
+4|code|				paths: reloadPaths
+4|code|				listeners:
+5|code|					'log': docpad.log
+5|code|					'error': docpad.error
+5|code|					'change': ->
+5|code|						docpad.log 'info', util.format(locale.watchReloadChange, new Date().toLocaleTimeString())
+5|code|						docpad.action 'load', (err) ->
+5|code|							return docpad.fatal(err)  if err
+5|code|							performGenerate(reset:true)
+4|code|				next: (err,_watchers) ->
+5|code|					if err
+5|code|						docpad.log('warn', "Watching the reload paths has failed:", reloadPaths, err)
+5|code|						return complete()
+5|code|					for watcher in _watchers
+5|code|						docpad.watchers.push(watcher)
+5|code|					return complete()
+3|code|			)
+0|empty|
+3|code|			# Watch regenerate paths
+3|code|			regeneratePaths = config.regeneratePaths
+3|code|			tasks.addTask "watch regenerate paths", (complete) -> docpad.watchdir(
+4|code|				paths: regeneratePaths
+4|code|				listeners:
+5|code|					'log': docpad.log
+5|code|					'error': docpad.error
+5|code|					'change': -> performGenerate(reset:true)
+4|code|				next: (err,_watchers) ->
+5|code|					if err
+5|code|						docpad.log('warn', "Watching the regenerate paths has failed:", regeneratePaths, err)
+5|code|						return complete()
+5|code|					for watcher in _watchers
+5|code|						docpad.watchers.push(watcher)
+5|code|					return complete()
+3|code|			)
+0|empty|
+3|code|			# Watch the source
+3|code|			srcPath = config.srcPath
+3|code|			tasks.addTask "watch the source path", (complete) -> docpad.watchdir(
+4|code|				path: srcPath
+4|code|				listeners:
+5|code|					'log': docpad.log
+5|code|					'error': docpad.error
+5|code|					'change': changeHandler
+4|code|				next: (err,watcher) ->
+5|code|					if err
+5|code|						docpad.log('warn', "Watching the src path has failed:", srcPath, err)
+5|code|						return complete()
+5|code|					docpad.watchers.push(watcher)
+5|code|					return complete()
+3|code|			)
+0|empty|
+3|code|			# Run
+3|code|			tasks.run()
+0|empty|
+3|code|			# Chain
+3|code|			@
+0|empty|
+2|comment|		# Timer
+2|code|		regenerateTimer = null
+2|code|		queueRegeneration = ->
+3|code|			# Reset the wait
+3|code|			if regenerateTimer
+4|code|				clearTimeout(regenerateTimer)
+4|code|				regenerateTimer = null
+0|empty|
+3|code|			# Regenerat after a while
+3|code|			regenerateTimer = setTimeout(performGenerate, config.regenerateDelay)
+0|empty|
+2|code|		performGenerate = (opts={}) ->
+3|code|			# Q: Should we also pass over the collection?
+3|code|			# A: No, doing the mtime query in generate is more robust
+0|empty|
+3|code|			# Log
+3|code|			docpad.log util.format(locale.watchRegenerating, new Date().toLocaleTimeString())
+0|empty|
+3|code|			# Afterwards, re-render anything that should always re-render
+3|code|			docpad.action 'generate', opts, (err) ->
+4|code|				docpad.error(err)  if err
+4|code|				docpad.log util.format(locale.watchRegenerated, new Date().toLocaleTimeString())
+0|empty|
+2|comment|		# Change event handler
+2|code|		changeHandler = (changeType,filePath,fileCurrentStat,filePreviousStat) ->
+3|code|			# Prepare
+3|code|			fileEitherStat = (fileCurrentStat or filePreviousStat)
+0|empty|
+3|code|			# For some reason neither of the stats may exist, this will cause errors as this is an invalid state
+3|code|			# as we depend on at least one stat existing, otherwise, what on earth is going on?
+3|code|			# Whatever the case, this should be fixed within watchr, not docpad
+3|code|			# as watchr should not be giving us invalid data
+3|code|			# https://github.com/bevry/docpad/issues/792
+3|code|			unless fileEitherStat
+4|code|				err = new Error("""
+5|code|						DocPad has encountered an invalid state while detecting changes for your files.
+5|code|						So the DocPad team can fix this right away, please provide any information you can to:
+5|code|						https://github.com/bevry/docpad/issues/792
+5|code|						""")
+4|code|				return docpad.error(err)
+0|empty|
+3|code|			# Log the change
+3|code|			docpad.log 'info', util.format(locale.watchChange, new Date().toLocaleTimeString()), changeType, filePath
+0|empty|
+3|code|			# Check if we are a file we don't care about
+3|code|			# This check should not be needed with v2.3.3 of watchr
+3|code|			# however we've still got it here as it may still be an issue
+3|code|			isIgnored = docpad.isIgnoredPath(filePath)
+3|code|			if isIgnored
+4|code|				docpad.log 'debug', util.format(locale.watchIgnoredChange, new Date().toLocaleTimeString()), filePath
+4|code|				return
+0|empty|
+3|code|			# Don't care if we are a directory
+3|code|			isDirectory = fileEitherStat.isDirectory()
+3|code|			if isDirectory
+4|code|				docpad.log 'debug', util.format(locale.watchDirectoryChange, new Date().toLocaleTimeString()), filePath
+4|code|				return
+0|empty|
+3|code|			# Override the stat's mtime to now
+3|code|			# This is because renames will not update the mtime
+3|code|			fileCurrentStat?.mtime = new Date()
+0|empty|
+3|code|			# Create the file object
+3|code|			file = docpad.addModel({fullPath:filePath, stat:fileCurrentStat})
+3|code|			file.setStat(fileCurrentStat)  if changeType is 'update'
+0|empty|
+3|code|			# File was deleted, delete the rendered file, and remove it from the database
+3|code|			if changeType is 'delete'
+4|code|				database.remove(file)
+4|code|				file.action 'delete', (err) ->
+5|code|					return docpad.error(err)  if err
+5|code|					queueRegeneration()
+0|empty|
+3|code|			# File is new or was changed, update it's mtime by setting the stat
+3|code|			else if changeType in ['create', 'update']
+4|code|				file.action 'load', (err) ->
+5|code|					return docpad.error(err)  if err
+5|code|					queueRegeneration()
+0|empty|
+2|comment|		# Watch
+2|code|		docpad.log(locale.watchStart)
+2|code|		restartWatchers (err) ->
+3|code|			return next(err)  if err
+3|code|			docpad.log(locale.watchStarted)
+3|code|			return next()
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+0|empty|
+1|comment|	# ---------------------------------
+1|comment|	# Run Action
+0|empty|
+1|prop|	run: (opts,next) =>
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts, next)
+2|code|		docpad = @
+2|code|		locale = @getLocale()
+2|code|		config = @getConfig()
+2|code|		{srcPath, rootPath} = config
+0|empty|
+2|comment|		# Prepare
+2|code|		run = (complete) ->
+3|code|			balUtil.flow(
+4|code|				object: docpad
+4|code|				action: 'server generate watch'
+4|code|				args: [opts]
+4|code|				next: complete
+3|code|			)
+0|empty|
+2|comment|		# Check if we have the docpad structure
+2|code|		safefs.exists srcPath, (exists) ->
+3|code|			# Check if have the correct structure, if so let's proceed with DocPad
+3|code|			return run(next)  if exists
+0|empty|
+3|code|			# We don't have the correct structure
+3|code|			# Check if we are running on an empty directory
+3|code|			safefs.readdir rootPath, (err,files) ->
+4|code|				return next(err)  if err
+0|empty|
+4|code|				# Check if our directory is empty
+4|code|				if files.length
+5|code|					# It isn't empty, display a warning
+5|code|					docpad.log('warn', "\n"+util.format(locale.skeletonNonexistant, rootPath))
+5|code|					return next()
+4|code|				else
+5|code|					docpad.skeleton opts, (err) ->
+5|code|						# Check
+5|code|						return next(err)  if err
+0|empty|
+5|code|						# Keep in global?
+5|code|						return run(next)  if opts.global is true or docpad.getConfig().global is true
+0|empty|
+5|code|						# Log
+5|code|						docpad.log('notice', locale.startLocal)
+0|empty|
+5|code|						# Destroy our DocPad instance so we can boot the local one
+5|code|						docpad.destroy (err) ->
+5|code|							# Check
+5|code|							return next(err)  if err
+0|empty|
+5|code|							# Forward onto the local DocPad Instance now that it has been installed
+5|code|							return docpadUtil.startLocalDocPadExecutable(next)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+0|empty|
+1|comment|	# ---------------------------------
+1|comment|	# Skeleton
+0|empty|
+1|comment|	# Init Install
+1|comment|	# next(err)
+1|prop|	initInstall: (opts,next) ->
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts,next)
+2|code|		docpad = @
+2|code|		config = @getConfig()
+0|empty|
+2|comment|		# Tasks
+2|code|		tasks = new TaskGroup("initInstall tasks", {concurrency:0, next})
+0|empty|
+2|code|		tasks.addTask "node modules", (complete) ->
+3|code|			path = pathUtil.join(config.rootPath, 'node_modules')
+3|code|			safefs.ensurePath(path, complete)
+0|empty|
+2|code|		tasks.addTask "package", (complete) ->
+3|code|			# Exists?
+3|code|			path = pathUtil.join(config.rootPath, 'package.json')
+3|code|			safefs.exists path, (exists) ->
+4|code|				# Check
+4|code|				return complete()  if exists
+0|empty|
+4|code|				# Write
+4|code|				data = JSON.stringify({
+5|code|					name: 'no-skeleton.docpad'
+5|code|					version: '0.1.0'
+5|code|					description: 'New DocPad project without using a skeleton'
+5|code|					engines:
+5|code|						node: '0.10'
+5|code|						npm: '1.3'
+5|code|					dependencies:
+5|code|						docpad: '~'+docpad.getVersion()
+5|code|					main: 'node_modules/docpad/bin/docpad-server'
+5|code|					scripts:
+5|code|						start: 'node_modules/docpad/bin/docpad-server'
+4|code|				}, null, '  ')
+4|code|				safefs.writeFile(path, data, complete)
+0|empty|
+2|comment|		# Run
+2|code|		tasks.run()
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Uninstall
+1|comment|	# next(err)
+1|prop|	uninstall: (opts,next) =>
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts,next)
+2|code|		docpad = @
+2|code|		config = @getConfig()
+0|empty|
+2|comment|		# Tasks
+2|code|		tasks = new TaskGroup("uninstall tasks", {next})
+0|empty|
+2|comment|		# Uninstall a plugin
+2|code|		if opts.plugin
+3|code|			tasks.addTask "uninstall the plugin: #{opts.plugin}", (complete) ->
+4|code|				plugins =
+5|code|					for plugin in opts.plugin.split(/[,\s]+/)
+5|code|						plugin = "docpad-plugin-#{plugin}"  if plugin.indexOf('docpad-plugin-') isnt 0
+5|code|						plugin
+4|code|				docpad.uninstallNodeModule(plugins, {
+5|code|					output: true
+5|code|					next: complete
+4|code|				})
+0|empty|
+2|comment|		# Re-load configuration
+2|code|		tasks.addTask "re-load configuration", (complete) ->
+3|code|			docpad.load(complete)
+0|empty|
+2|comment|		# Run
+2|code|		tasks.run()
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Install
+1|comment|	# next(err)
+1|prop|	install: (opts,next) =>
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts,next)
+2|code|		docpad = @
+2|code|		config = @getConfig()
+0|empty|
+2|comment|		# Tasks
+2|code|		tasks = new TaskGroup("install tasks", {next})
+0|empty|
+2|code|		tasks.addTask "init the installation", (complete) ->
+3|code|			docpad.initInstall(opts, complete)
+0|empty|
+2|comment|		# Install a plugin
+2|code|		if opts.plugin
+3|code|			tasks.addTask "install the plugin: #{opts.plugin}", (complete) ->
+4|code|				plugins =
+5|code|					for plugin in opts.plugin.split(/[,\s]+/)
+5|code|						plugin = "docpad-plugin-#{plugin}"  if plugin.indexOf('docpad-plugin-') isnt 0
+5|code|						plugin += '@'+docpad.pluginVersion  if plugin.indexOf('@') is -1
+5|code|						plugin
+4|code|				docpad.installNodeModule(plugins, {
+5|code|					output: true
+5|code|					next: complete
+4|code|				})
+0|empty|
+2|code|		tasks.addTask "re-initialize the website's modules", (complete) ->
+3|code|			docpad.initNodeModules({
+4|code|				output: true
+4|code|				next: complete
+3|code|			})
+0|empty|
+2|code|		tasks.addTask "fix node package versions", (complete) ->
+3|code|			docpad.fixNodePackageVersions(complete)
+0|empty|
+2|code|		tasks.addTask "re-load the configuration", (complete) ->
+3|code|			docpad.load(complete)
+0|empty|
+2|comment|		# Run
+2|code|		tasks.run()
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Upgrade
+1|comment|	# next(err)
+1|prop|	upgrade: (opts,next) =>
+2|comment|		# Update Global NPM and DocPad
+2|code|		@installNodeModule('npm docpad@6', {
+3|code|			global: true
+3|code|			output: true
+3|code|			next: next
+2|code|		})
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Update
+1|comment|	# next(err)
+1|prop|	update: (opts,next) =>
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts,next)
+2|code|		docpad = @
+2|code|		config = @getConfig()
+0|empty|
+2|comment|		# Tasks
+2|code|		tasks = new TaskGroup("update tasks", {next})
+0|empty|
+2|code|		tasks.addTask "init the install", (complete) ->
+3|code|			docpad.initInstall(opts, complete)
+0|empty|
+2|comment|		# Update the local docpad and plugin dependencies
+2|comment|		# Grouped together to avoid npm dependency shortcuts that can cause missing dependencies
+2|comment|		# But don't update git/http/https dependencies, those are special for some reason
+2|comment|		# > https://github.com/bevry/docpad/pull/701
+2|code|		dependencies = []
+2|code|		eachr docpad.websitePackageConfig.dependencies, (version,name) ->
+3|code|			return  if /^docpad-plugin-/.test(name) is false or /// :// ///.test(version) is true
+3|code|			dependencies.push(name+'@'+docpad.pluginVersion)
+2|code|		if dependencies.length isnt 0
+3|code|			tasks.addTask "update plugins that are dependencies", (complete) ->
+4|code|				docpad.installNodeModule('docpad@6 '+dependencies, {
+5|code|					output: true
+5|code|					next: complete
+4|code|				})
+0|empty|
+2|comment|		# Update the plugin dev dependencies
+2|code|		devDependencies = []
+2|code|		eachr docpad.websitePackageConfig.devDependencies, (version,name) ->
+3|code|			return  if /^docpad-plugin-/.test(name) is false
+3|code|			devDependencies.push(name+'@'+docpad.pluginVersion)
+2|code|		if devDependencies.length isnt 0
+3|code|			tasks.addTask "update plugins that are dev dependencies", (complete) ->
+4|code|				docpad.installNodeModule(devDependencies, {
+5|code|					save: '--save-dev'
+5|code|					output: true
+5|code|					next: complete
+4|code|				})
+0|empty|
+2|code|		tasks.addTask "fix node package versions", (complete) ->
+3|code|			docpad.fixNodePackageVersions(complete)
+0|empty|
+2|code|		tasks.addTask "re-initialize the rest of the website's modules", (complete) ->
+3|code|			docpad.initNodeModules({
+4|code|				output: true
+4|code|				next: complete
+3|code|			})
+0|empty|
+2|comment|		# Run
+2|code|		tasks.run()
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Clean
+1|comment|	# next(err)
+1|prop|	clean: (opts,next) =>
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts,next)
+2|code|		docpad = @
+2|code|		config = docpad.getConfig()
+2|code|		locale = @getLocale()
+0|empty|
+2|comment|		# Log
+2|code|		docpad.log('info', locale.renderCleaning)
+0|empty|
+2|comment|		# Tasks
+2|code|		tasks = new TaskGroup "clean tasks", {concurrency:0}, next:(err) ->
+3|code|			# Error?
+3|code|			return next(err)  if err
+0|empty|
+3|code|			# Log
+3|code|			docpad.log('info', locale.renderCleaned)
+0|empty|
+3|code|			# Forward
+3|code|			return next()
+0|empty|
+2|code|		tasks.addTask 'reset the collecitons', (complete) ->
+3|code|			docpad.resetCollections(opts, complete)
+0|empty|
+2|comment|		# Delete out path
+2|comment|		# but only if our outPath is not a parent of our rootPath
+2|code|		tasks.addTask 'delete out path', (complete) ->
+3|code|			# Check if our outPath is higher than our root path, so do not remove files
+3|code|			return complete()  if config.rootPath.indexOf(config.outPath) isnt -1
+0|empty|
+3|code|			# Our outPath is not related or lower than our root path, so do remove it
+3|code|			balUtil.rmdirDeep(config.outPath, complete)
+0|empty|
+2|comment|		# Delete database cache
+2|code|		tasks.addTask 'delete database cache file', (complete) ->
+3|code|			safefs.unlink(config.databaseCachePath, complete)
+0|empty|
+2|comment|		# Run tasks
+2|code|		tasks.run()
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Initialize a Skeleton into to a Directory
+1|comment|	# next(err)
+1|prop|	initSkeleton: (skeletonModel,opts,next) ->
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts,next)
+2|code|		docpad = @
+2|code|		config = @getConfig()
+0|empty|
+2|comment|		# Defaults
+2|code|		opts.destinationPath ?= config.rootPath
+0|empty|
+2|comment|		# Tasks
+2|code|		tasks = new TaskGroup("initSkeleton tasks", {next})
+0|empty|
+2|code|		tasks.addTask "ensure the path we are writing to exists", (complete) ->
+3|code|			safefs.ensurePath(opts.destinationPath, complete)
+0|empty|
+2|comment|		# Clone out the repository if applicable
+2|code|		if skeletonModel? and skeletonModel.id isnt 'none'
+3|code|			tasks.addTask "clone out the git repo", (complete) ->
+4|code|				docpad.initGitRepo({
+5|code|					path: opts.destinationPath
+5|code|					url: skeletonModel.get('repo')
+5|code|					branch: skeletonModel.get('branch')
+5|code|					remote: 'skeleton'
+5|code|					output: true
+5|code|					next: complete
+4|code|				})
+2|code|		else
+3|code|			tasks.addTask "ensure src path exists", (complete) ->
+4|code|				safefs.ensurePath(config.srcPath, complete)
+0|empty|
+3|code|			tasks.addGroup "initialize the website directory files", ->
+4|code|				@setConfig(concurrency:0)
+0|empty|
+4|code|				# README
+4|code|				@addTask "README.md", (complete) ->
+5|code|					# Exists?
+5|code|					path = pathUtil.join(config.rootPath, 'README.md')
+5|code|					safefs.exists path, (exists) ->
+5|code|						# Check
+5|code|						return complete()  if exists
+0|empty|
+5|code|						# Write
+5|code|						data = """
+5|code|							# Your [DocPad](http://docpad.org) Project
+0|empty|
+5|code|							## License
+5|code|							Copyright &copy; #{(new Date()).getFullYear()}+ All rights reserved.
+5|code|							"""
+5|code|						safefs.writeFile(path, data, complete)
+0|empty|
+4|code|				# Config
+4|code|				@addTask "docpad.coffee configuration file", (complete) ->
+5|code|					# Exists?
+5|code|					docpad.getConfigPath (err,path) ->
+5|code|						# Check
+5|code|						return complete(err)  if err or path
+5|code|						path = pathUtil.join(config.rootPath, 'docpad.coffee')
+0|empty|
+5|code|						# Write
+5|code|						data = """
+5|code|							# DocPad Configuration File
+5|code|							# http://docpad.org/docs/config
+0|empty|
+5|code|							# Define the DocPad Configuration
+5|code|							docpadConfig = {
+5|code|								# ...
+5|code|							}
+0|empty|
+5|code|							# Export the DocPad Configuration
+5|code|							module.exports = docpadConfig
+5|code|							"""
+5|code|						safefs.writeFile(path, data, complete)
+0|empty|
+4|code|				# Documents
+4|code|				@addTask "documents directory", (complete) ->
+5|code|					safefs.ensurePath(config.documentsPaths[0], complete)
+0|empty|
+4|code|				# Layouts
+4|code|				@addTask "layouts directory", (complete) ->
+5|code|					safefs.ensurePath(config.layoutsPaths[0], complete)
+0|empty|
+4|code|				# Files
+4|code|				@addTask "files directory", (complete) ->
+5|code|					safefs.ensurePath(config.filesPaths[0], complete)
+0|empty|
+2|comment|		# Run
+2|code|		tasks.run()
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Install a Skeleton into a Directory
+1|comment|	# next(err)
+1|prop|	installSkeleton: (skeletonModel,opts,next) ->
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts,next)
+2|code|		docpad = @
+0|empty|
+2|comment|		# Defaults
+2|code|		opts.destinationPath ?= @getConfig().rootPath
+0|empty|
+2|comment|		# Initialize and install the skeleton
+2|code|		docpad.initSkeleton skeletonModel, opts, (err) ->
+3|code|			# Check
+3|code|			return next(err)  if err
+0|empty|
+3|code|			# Forward
+3|code|			docpad.install(opts, next)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Use a Skeleton
+1|comment|	# next(err)
+1|prop|	useSkeleton: (skeletonModel,opts,next) ->
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts,next)
+2|code|		docpad = @
+2|code|		locale = @getLocale()
+0|empty|
+2|comment|		# Defaults
+2|code|		opts.destinationPath ?= @getConfig().rootPath
+0|empty|
+2|comment|		# Extract
+2|code|		skeletonId = skeletonModel?.id or 'none'
+2|code|		skeletonName = skeletonModel?.get('name') or locale.skeletonNoneName
+0|empty|
+2|comment|		# Track
+2|code|		docpad.track('skeleton-use', {skeletonId})
+0|empty|
+2|comment|		# Log
+2|code|		docpad.log('info', util.format(locale.skeletonInstall, skeletonName, opts.destinationPath)+' '+locale.pleaseWait)
+0|empty|
+2|comment|		# Install Skeleton
+2|code|		docpad.installSkeleton skeletonModel, opts, (err) ->
+3|code|			# Error?
+3|code|			return next(err)  if err
+0|empty|
+3|code|			# Log
+3|code|			docpad.log('info', locale.skeletonInstalled)
+0|empty|
+3|code|			# Forward
+3|code|			return next(err)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Select a Skeleton
+1|comment|	# next(err,skeletonModel)
+1|prop|	selectSkeleton: (opts,next) ->
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts,next)
+2|code|		docpad = @
+2|code|		opts.selectSkeletonCallback ?= null
+0|empty|
+2|comment|		# Track
+2|code|		docpad.track('skeleton-ask')
+0|empty|
+2|comment|		# Get the available skeletons
+2|code|		docpad.getSkeletons (err,skeletonsCollection) ->
+3|code|			# Check
+3|code|			return next(err)  if err
+0|empty|
+3|code|			# Provide selection to the interface
+3|code|			opts.selectSkeletonCallback(skeletonsCollection, next)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Skeleton
+1|prop|	skeleton: (opts,next) =>
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts,next)
+2|code|		docpad = @
+2|code|		config = @getConfig()
+2|code|		opts.selectSkeletonCallback ?= null
+0|empty|
+2|comment|		# Don't do anything if the src path exists
+2|code|		safefs.exists config.srcPath, (exists) ->
+3|code|			# Check
+3|code|			if exists
+4|code|				err = new Error(locale.skeletonExists)
+4|code|				return next(err)
+0|empty|
+3|code|			# Select Skeleton
+3|code|			docpad.selectSkeleton opts, (err,skeletonModel) ->
+4|code|				# Check
+4|code|				return next(err)  if err
+0|empty|
+4|code|				# Use Skeleton
+4|code|				docpad.useSkeleton(skeletonModel, next)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Init
+1|prop|	init: (opts,next) =>
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts,next)
+2|code|		docpad = @
+2|code|		locale = @getLocale()
+2|code|		config = @getConfig()
+0|empty|
+2|comment|		# Don't do anything if the src path exists
+2|code|		safefs.exists config.srcPath, (exists) ->
+3|code|			# Check
+3|code|			if exists
+4|code|				err = new Error(locale.skeletonExists)
+4|code|				return next(err)
+0|empty|
+3|code|			# No Skeleton
+3|code|			docpad.useSkeleton(null, next)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+0|empty|
+1|comment|	# ---------------------------------
+1|comment|	# Server
+0|empty|
+1|comment|	# Serve Document
+1|prop|	serveDocument: (opts,next) =>
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts,next)
+2|code|		{document,err,req,res} = opts
+2|code|		docpad = @
+2|code|		config = @getConfig()
+0|empty|
+2|comment|		# If no document, then exit early
+2|code|		unless document
+3|code|			if opts.statusCode?
+4|code|				return res.send(opts.statusCode)
+3|code|			else
+4|code|				return next()
+0|empty|
+2|comment|		# Prepare
+2|code|		res.setHeaderIfMissing ?= (name, value) ->
+3|code|			res.setHeader(name, value)  unless res.getHeader(name)
+0|empty|
+2|comment|		# Content Type + Encoding/Charset
+2|code|		encoding = document.get('encoding')
+2|code|		charset = 'utf-8'  if encoding in ['utf8', 'utf-8']
+2|code|		contentType = document.get('outContentType') or document.get('contentType')
+2|code|		res.setHeaderIfMissing('Content-Type', contentType + (if charset then "; charset=#{charset}" else ''))
+0|empty|
+2|comment|		# Cache-Control (max-age)
+2|code|		res.setHeaderIfMissing('Cache-Control', "public, max-age=#{config.maxAge}")  if config.maxAge
+0|empty|
+2|comment|		# Send
+2|code|		dynamic = document.get('dynamic')
+2|code|		if dynamic
+3|code|			# If you are debugging why a dynamic document isn't rendering
+3|code|			# it could be that you don't have cleanurls installed
+3|code|			# e.g. if index.html is dynamic, and you are accessing it via /
+3|code|			# then this code will not be reached, as we don't register that url
+3|code|			# where if we have the cleanurls plugin installed, then do register that url
+3|code|			# against the document, so this is reached
+3|code|			collection = new FilesCollection([document], {name:'dynamic collection'})
+3|code|			templateData = extendr.extend({}, req.templateData or {}, {req,err})
+3|code|			docpad.action 'generate', {collection, templateData}, (err) ->
+4|code|				content = document.getOutContent()
+4|code|				if err
+5|code|					docpad.error(err)
+5|code|					return next(err)
+4|code|				else
+5|code|					if opts.statusCode?
+5|code|						return res.send(opts.statusCode, content)
+5|code|					else
+5|code|						return res.send(content)
+0|empty|
+2|code|		else
+3|code|			# ETag: `"<size>-<mtime>"`
+3|code|			ctime = document.get('date')    # use the date or mtime, it should always exist
+3|code|			mtime = document.get('wtime')   # use the last generate time, it may not exist though
+3|code|			stat = document.getStat()
+3|code|			etag = stat.size + '-' + Number(mtime)   if mtime and stat
+3|code|			res.setHeaderIfMissing('ETag', '"' + etag + '"')  if etag
+0|empty|
+3|code|			# Date
+3|code|			res.setHeaderIfMissing('Date', ctime.toUTCString())  if ctime?.toUTCString?
+3|code|			res.setHeaderIfMissing('Last-Modified', mtime.toUTCString())  if mtime?.toUTCString?
+3|code|			# @TODO:
+3|code|			# The above .toUTCString? check is a workaround because sometimes the date object
+3|code|			# isn't really a date object, this needs to be fixed properly
+3|code|			# https://github.com/bevry/docpad/pull/781
+0|empty|
+3|code|			# Send
+3|code|			if etag and etag is (req.get('If-None-Match') or '').replace(/^"|"$/g, '')
+4|code|				res.send(304)  # not modified
+3|code|			else
+4|code|				content = document.getOutContent()
+4|code|				if content
+5|code|					if opts.statusCode?
+5|code|						res.send(opts.statusCode, content)
+5|code|					else
+5|code|						res.send(content)
+4|code|				else
+5|code|					if opts.statusCode?
+5|code|						res.send(opts.statusCode)
+5|code|					else
+5|code|						next()
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Server Middleware: Header
+1|prop|	serverMiddlewareHeader: (req,res,next) =>
+2|comment|		# Prepare
+2|code|		docpad = @
+0|empty|
+2|comment|		# Handle
+2|comment|		# Always enable this until we get a complaint about not having it
+2|comment|		# For instance, Express.js also forces this
+2|code|		tools = res.get('X-Powered-By').split(/[,\s]+/g)
+2|code|		tools.push("DocPad v#{docpad.getVersion()}")
+2|code|		tools = tools.join(', ')
+2|code|		res.set('X-Powered-By', tools)
+0|empty|
+2|comment|		# Forward
+2|code|		next()
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Server Middleware: Router
+1|prop|	serverMiddlewareRouter: (req,res,next) =>
+2|comment|		# Prepare
+2|code|		docpad = @
+0|empty|
+2|comment|		# Get the file
+2|code|		docpad.getFileByRoute req.url, (err,file) ->
+3|code|			# Check
+3|code|			return next(err)  if err or file? is false
+0|empty|
+3|code|			# Check if we are the desired url
+3|code|			# if we aren't do a permanent redirect
+3|code|			url = file.get('url')
+3|code|			cleanUrl = docpad.getUrlPathname(url)
+3|code|			if (url isnt cleanUrl) and (url isnt req.url)
+4|code|				return res.redirect(301, url)
+0|empty|
+3|code|			# Serve the file to the user
+3|code|			docpad.serveDocument({document:file, req, res, next})
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Server Middleware: 404
+1|code|	serverMiddleware404: (req,res,next) =>
+2|comment|		# Prepare
+2|code|		docpad = @
+2|code|		database = docpad.getDatabaseSafe()
+0|empty|
+2|comment|		# Notify the user of a 404
+2|code|		docpad.log('notice', "404 Not Found:", req.url)
+0|empty|
+2|comment|		# Check
+2|code|		return res.send(500)  unless database
+0|empty|
+2|comment|		# Serve the document to the user
+2|code|		document = database.findOne({relativeOutPath: '404.html'})
+2|code|		docpad.serveDocument({document, req, res, next, statusCode:404})
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Server Middleware: 500
+1|code|	serverMiddleware500: (err,req,res,next) =>
+2|comment|		# Prepare
+2|code|		docpad = @
+2|code|		database = docpad.getDatabaseSafe()
+0|empty|
+2|comment|		# Check
+2|code|		return res.send(500)  unless database
+0|empty|
+2|comment|		# Serve the document to the user
+2|code|		document = database.findOne({relativeOutPath: '500.html'})
+2|code|		docpad.serveDocument({document,err,req,res,next,statusCode:500})
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Server
+1|prop|	server: (opts,next) =>
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts,next)
+2|code|		docpad = @
+2|code|		config = @config
+2|code|		locale = @getLocale()
+2|code|		port = @getPort()
+2|code|		hostname = @getHostname()
+0|empty|
+2|comment|		# Require
+2|code|		http = require('http')
+2|code|		express = require('express')
+0|empty|
+2|comment|		# Config
+2|code|		servers = @getServer(true)
+2|code|		opts.serverExpress ?= servers.serverExpress
+2|code|		opts.serverHttp ?= servers.serverHttp
+2|code|		opts.middlewareBodyParser ?= config.middlewareBodyParser ? config.middlewareStandard
+2|code|		opts.middlewareMethodOverride ?= config.middlewareMethodOverride ? config.middlewareStandard
+2|code|		opts.middlewareExpressRouter ?= config.middlewareExpressRouter ? config.middlewareStandard
+2|code|		opts.middleware404 ?= config.middleware404
+2|code|		opts.middleware500 ?= config.middleware500
+2|comment|		# @TODO: Why do we do opts here instead of config???
+0|empty|
+2|comment|		# Tasks
+2|code|		tasks = new TaskGroup("server tasks", {next})
+0|empty|
+2|comment|		# Before Plugin Event
+2|code|		tasks.addTask "emit serverBefore", (complete) ->
+3|code|			docpad.emitSerial('serverBefore', complete)
+0|empty|
+2|comment|		# Create server when none is defined
+2|code|		if !opts.serverExpress or !opts.serverHttp
+3|code|			tasks.addTask "create server", ->
+4|code|				opts.serverExpress or= express()
+4|code|				opts.serverHttp or= http.createServer(opts.serverExpress)
+4|code|				docpad.setServer(opts)
+0|empty|
+2|comment|		# Extend the server with our middlewares
+2|code|		if config.extendServer is true
+3|code|			tasks.addTask "extend the server", (complete) ->
+4|code|				# Parse url-encoded and json encoded form data
+4|code|				if opts.middlewareBodyParser isnt false
+5|code|					opts.serverExpress.use(express.urlencoded())
+5|code|					opts.serverExpress.use(express.json())
+0|empty|
+4|code|				# Allow over-riding of the request type (e.g. GET, POST, PUT, DELETE)
+4|code|				if opts.middlewareMethodOverride isnt false
+5|code|					opts.serverExpress.use(express.methodOverride())
+0|empty|
+4|code|				# Emit the serverExtend event
+4|code|				# So plugins can define their routes earlier than the DocPad routes
+4|code|				docpad.emitSerial 'serverExtend', {
+5|code|					server: opts.serverExpress # b/c
+5|code|					express: opts.serverExpress # b/c
+5|code|					serverHttp: opts.serverHttp
+5|code|					serverExpress: opts.serverExpress
+4|code|				}, (err) ->
+5|code|					return next(err)  if err
+0|empty|
+5|code|					# DocPad Header Middleware
+5|code|					# Keep it after the serverExtend event
+5|code|					opts.serverExpress.use(docpad.serverMiddlewareHeader)
+0|empty|
+5|code|					# Router Middleware
+5|code|					# Keep it after the serverExtend event
+5|code|					opts.serverExpress.use(opts.serverExpress.router)  if opts.middlewareExpressRouter isnt false
+0|empty|
+5|code|					# DocPad Router Middleware
+5|code|					# Keep it after the serverExtend event
+5|code|					opts.serverExpress.use(docpad.serverMiddlewareRouter)
+0|empty|
+5|code|					# Static
+5|code|					# Keep it after the serverExtend event
+5|code|					if config.maxAge
+5|code|						opts.serverExpress.use(express.static(config.outPath, {maxAge:config.maxAge}))
+5|code|					else
+5|code|						opts.serverExpress.use(express.static(config.outPath))
+0|empty|
+5|code|					# DocPad 404 Middleware
+5|code|					# Keep it after the serverExtend event
+5|code|					opts.serverExpress.use(docpad.serverMiddleware404)  if opts.middleware404 isnt false
+0|empty|
+5|code|					# DocPad 500 Middleware
+5|code|					# Keep it after the serverExtend event
+5|code|					opts.serverExpress.use(docpad.serverMiddleware500)  if opts.middleware500 isnt false
+0|empty|
+5|code|					# Done
+5|code|					return complete()
+0|empty|
+2|comment|		# Start Server
+2|code|		tasks.addTask "start the server", (complete) ->
+3|code|			# Catch
+3|code|			opts.serverHttp.once 'error', (err) ->
+4|code|				# Friendlify the error message if it is what we suspect it is
+4|code|				if err.message.indexOf('EADDRINUSE') isnt -1
+5|code|					err = new Error(util.format(locale.serverInUse, port))
+0|empty|
+4|code|				# Done
+4|code|				return complete(err)
+0|empty|
+3|code|			# Listen
+3|code|			docpad.log 'debug', util.format(locale.serverStart, hostname, port, config.outPath)
+3|code|			opts.serverHttp.listen port, hostname,  ->
+4|code|				# Log
+4|code|				address = opts.serverHttp.address()
+4|code|				serverHostname = address.address
+4|code|				serverPort = address.port
+4|code|				serverLocation = "http://#{serverHostname}:#{serverPort}/"
+4|code|				docpad.log 'info', util.format(locale.serverStarted, serverLocation, config.outPath)
+0|empty|
+4|code|				# Done
+4|code|				return complete()
+0|empty|
+2|comment|		# After Plugin Event
+2|code|		tasks.addTask "emit serverAfter", (complete) ->
+3|code|			docpad.emitSerial('serverAfter', {
+4|code|				server: opts.serverExpress # b/c
+4|code|				express: opts.serverExpress # b/c
+4|code|				serverHttp: opts.serverHttp
+4|code|				serverExpress: opts.serverExpress
+3|code|			}, complete)
+0|empty|
+2|comment|		# Run the tasks
+2|code|		tasks.run()
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+0|empty|
+0|comment|# =====================================
+0|comment|# Export
+0|empty|
+0|comment|# Export
+0|module|module.exports =
+1|comment|	# Modules
+1|prop|	DocPad: DocPad
+1|prop|	queryEngine: queryEngine
+1|prop|	Backbone: Backbone
+0|empty|
+1|comment|	# Create Instance
+1|comment|	# Wrapper for creating a DocPad instance
+1|comment|	# good for future compatibility in case the API changes
+1|method|	createInstance: (args...) ->
+2|code|		return new DocPad(args...)

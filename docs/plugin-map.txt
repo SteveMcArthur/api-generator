@@ -1,0 +1,174 @@
+0|comment|# Requires
+0|code|{extendOnClass} = require('extendonclass')
+0|code|extendr = require('extendr')
+0|code|typeChecker = require('typechecker')
+0|code|ambi = require('ambi')
+0|code|eachr = require('eachr')
+0|empty|
+0|comment|# Define Plugin
+0|class|class BasePlugin
+0|empty|
+1|comment|	# Add support for BasePlugin.extend(proto)
+1|code|	@extend: extendOnClass
+0|empty|
+1|comment|	# ---------------------------------
+1|comment|	# Inherited
+0|empty|
+1|comment|	# DocPad Instance
+1|prop|	docpad: null
+0|empty|
+0|empty|
+1|comment|	# ---------------------------------
+1|comment|	# Variables
+0|empty|
+1|comment|	# Plugin name
+1|prop|	name: null
+0|empty|
+1|comment|	# Plugin config
+1|prop|	config: {}
+1|prop|	instanceConfig: {}
+0|empty|
+1|comment|	# Plugin priority
+1|number|	priority: 500
+0|empty|
+1|comment|	# Constructor
+1|method|	constructor: (opts) ->
+2|comment|		# Prepare
+2|code|		me = @
+2|code|		{docpad,config} = opts
+2|code|		@docpad = docpad
+0|empty|
+2|comment|		# Bind listeners
+2|code|		@bindListeners()
+0|empty|
+2|comment|		# Swap out our configuration
+2|code|		@config = extendr.deepClone(@config)
+2|code|		@instanceConfig = extendr.deepClone(@instanceConfig)
+2|code|		@initialConfig = @config
+2|code|		@setConfig(config)
+0|empty|
+2|comment|		# Return early if we are disabled
+2|code|		return @  if @isEnabled() is false
+0|empty|
+2|comment|		# Listen to events
+2|code|		@addListeners()
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Set Instance Configuration
+1|method|	setInstanceConfig: (instanceConfig) ->
+2|comment|		# Merge in the instance configurations
+2|code|		if instanceConfig
+3|code|			extendr.safeDeepExtendPlainObjects(@instanceConfig, instanceConfig)
+3|code|			extendr.safeDeepExtendPlainObjects(@config, instanceConfig)  if @config
+2|code|		@
+0|empty|
+1|comment|	# Set Configuration
+1|prop|	setConfig: (instanceConfig=null) =>
+2|comment|		# Prepare
+2|code|		docpad = @docpad
+2|code|		userConfig = @docpad.config.plugins[@name]
+2|code|		@config = @docpad.config.plugins[@name] = {}
+0|empty|
+2|comment|		# Instance config
+2|code|		@setInstanceConfig(instanceConfig)  if instanceConfig
+0|empty|
+2|comment|		# Merge configurations
+2|code|		configPackages = [@initialConfig, userConfig, @instanceConfig]
+2|code|		configsToMerge = [@config]
+2|code|		docpad.mergeConfigurations(configPackages, configsToMerge)
+0|empty|
+2|comment|		# Remove listeners if we are disabled
+2|code|		@removeListeners()  unless @isEnabled()
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Get Configuration
+1|method|	getConfig: =>
+2|code|		return @config
+0|empty|
+1|comment|	# Alias for b/c
+1|inlineMethod|	bindEvents: -> @addListeners()
+0|empty|
+1|comment|	# Bind Listeners
+1|method|	bindListeners: ->
+2|comment|		# Prepare
+2|code|		pluginInstance = @
+2|code|		docpad = @docpad
+2|code|		events = docpad.getEvents()
+0|empty|
+2|comment|		# Bind events
+2|code|		eachr events, (eventName) ->
+3|code|			# Fetch the event handler
+3|code|			eventHandler = pluginInstance[eventName]
+0|empty|
+3|code|			# Check it exists and is a function
+3|code|			if typeChecker.isFunction(eventHandler)
+4|code|				# Bind the listener to the plugin
+4|code|				pluginInstance[eventName] = eventHandler.bind(pluginInstance)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Add Listeners
+1|method|	addListeners: ->
+2|comment|		# Prepare
+2|code|		pluginInstance = @
+2|code|		docpad = @docpad
+2|code|		events = docpad.getEvents()
+0|empty|
+2|comment|		# Bind events
+2|code|		eachr events, (eventName) ->
+3|code|			# Fetch the event handler
+3|code|			eventHandler = pluginInstance[eventName]
+0|empty|
+3|code|			# Check it exists and is a function
+3|code|			if typeChecker.isFunction(eventHandler)
+4|code|				# Apply the priority
+4|code|				eventHandlerPriority = pluginInstance[eventName+'Priority'] or pluginInstance.priority or null
+4|code|				eventHandler.priority ?= eventHandlerPriority
+4|code|				eventHandler.name = "#{pluginInstance.name}: {eventName}"
+4|code|				eventHandler.name += "(priority eventHandler.priority})"  if eventHandler.priority?
+0|empty|
+4|code|				# Wrap the event handler, and bind it to docpad
+4|code|				docpad
+5|code|					.off(eventName, eventHandler)
+5|code|					.on(eventName, eventHandler)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Remove Listeners
+1|method|	removeListeners: ->
+2|comment|		# Prepare
+2|code|		pluginInstance = @
+2|code|		docpad = @docpad
+2|code|		events = docpad.getEvents()
+0|empty|
+2|comment|		# Bind events
+2|code|		eachr events, (eventName) ->
+3|code|			# Fetch the event handler
+3|code|			eventHandler = pluginInstance[eventName]
+0|empty|
+3|code|			# Check it exists and is a function
+3|code|			if typeChecker.isFunction(eventHandler)
+4|code|				# Wrap the event handler, and unbind it from docpad
+4|code|				docpad.off(eventName, eventHandler)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Destroy
+1|method|	destroy: ->
+2|code|		@removeListeners()
+2|code|		@
+0|empty|
+1|comment|	# Is Enabled?
+1|method|	isEnabled: ->
+2|code|		return @config.enabled isnt false
+0|empty|
+0|empty|
+0|comment|# Export Plugin
+0|module|module.exports = BasePlugin

@@ -1,0 +1,1035 @@
+0|comment|# Import
+0|code|pathUtil = require('path')
+0|code|isTextOrBinary = require('istextorbinary')
+0|code|typeChecker = require('typechecker')
+0|code|{TaskGroup} = require('taskgroup')
+0|code|safefs = require('safefs')
+0|code|mime = require('mime')
+0|code|extendr = require('extendr')
+0|code|{extractOptsAndCallback} = require('extract-opts')
+0|empty|
+0|comment|# Import: Optional
+0|code|jschardet = null
+0|code|encodingUtil = null
+0|comment|#Iconv = null
+0|empty|
+0|comment|# Local
+0|code|{Backbone,Model} = require('../base')
+0|code|docpadUtil = require('../util')
+0|empty|
+0|empty|
+0|comment|# ---------------------------------
+0|comment|# File Model
+0|empty|
+0|class|class FileModel extends Model
+0|empty|
+1|comment|	# ---------------------------------
+1|comment|	# Properties
+0|empty|
+1|comment|	# Model Class
+1|prop|	klass: FileModel
+0|empty|
+1|comment|	# Model Type
+1|string|	type: 'file'
+0|empty|
+1|comment|	# The out directory path to put the relative path
+1|prop|	rootOutDirPath: null
+0|empty|
+1|comment|	# Whether or not we should detect encoding
+1|prop|	detectEncoding: false
+0|empty|
+1|comment|	# Stat Object
+1|prop|	stat: null
+0|empty|
+1|comment|	# File buffer
+1|prop|	buffer: null
+0|empty|
+1|comment|	# Buffer time
+1|prop|	bufferTime: null
+0|empty|
+1|comment|	# The parsed file meta data (header)
+1|comment|	# Is a Backbone.Model instance
+1|prop|	meta: null
+0|empty|
+1|comment|	# Get Options
+1|method|	getOptions: ->
+2|code|		return {@detectEncoding, @rootOutDirPath, @stat, @buffer, @meta}
+0|empty|
+1|comment|	# Is Option
+1|method|	isOption: (key) ->
+2|code|		names = ['detectEncoding', 'rootOutDirPath', 'stat', 'data', 'buffer', 'meta']
+2|code|		result = key in names
+2|code|		return result
+0|empty|
+1|comment|	# Extract Options
+1|method|	extractOptions: (attrs) ->
+2|comment|		# Prepare
+2|code|		result = {}
+0|empty|
+2|comment|		# Extract
+2|code|		for own key,value of attrs
+3|code|			if @isOption(key)
+4|code|				result[key] = value
+4|code|				delete attrs[key]
+0|empty|
+2|comment|		# Return
+2|code|		return result
+0|empty|
+1|comment|	# Set Options
+1|prop|	setOptions: (attrs={}) ->
+2|comment|		# Root Out Path
+2|code|		if attrs.detectEncoding?
+3|code|			@rootOutDirPath = attrs.detectEncoding
+3|code|			delete @attributes.detectEncoding
+0|empty|
+2|comment|		# Root Out Path
+2|code|		if attrs.rootOutDirPath?
+3|code|			@rootOutDirPath = attrs.rootOutDirPath
+3|code|			delete @attributes.rootOutDirPath
+0|empty|
+2|comment|		# Stat
+2|code|		if attrs.stat?
+3|code|			@setStat(attrs.stat)
+3|code|			delete @attributes.stat
+0|empty|
+2|comment|		# Data
+2|code|		if attrs.data?
+3|code|			@setBuffer(attrs.data)
+3|code|			delete @attributes.data
+0|empty|
+2|comment|		# Buffer
+2|code|		if attrs.buffer?
+3|code|			@setBuffer(attrs.buffer)
+3|code|			delete @attributes.buffer
+0|empty|
+2|comment|		# Meta
+2|code|		if attrs.meta?
+3|code|			@setMeta(attrs.meta)
+3|code|			delete @attributes.meta
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Clone
+1|method|	clone: ->
+2|comment|		# Fetch
+2|code|		attrs = @getAttributes()
+2|code|		opts = @getOptions()
+0|empty|
+2|comment|		# Clean up
+2|code|		delete attrs.id
+0|empty|
+2|comment|		# Clone
+2|code|		clonedModel = new @klass(attrs, opts)
+0|empty|
+2|comment|		# Emit clone event so parent can re-attach listeners
+2|code|		@emit('clone', clonedModel)
+0|empty|
+2|comment|		# Return
+2|code|		return clonedModel
+0|empty|
+0|empty|
+1|comment|	# ---------------------------------
+1|comment|	# Attributes
+0|empty|
+1|prop|	defaults:
+0|empty|
+2|comment|		# ---------------------------------
+2|comment|		# Automaticly set variables
+0|empty|
+2|comment|		# The unique document identifier
+2|prop|		id: null
+0|empty|
+2|comment|		# The file's name without the extension
+2|prop|		basename: null
+0|empty|
+2|comment|		# The out file's name without the extension
+2|prop|		outBasename: null
+0|empty|
+2|comment|		# The file's last extension
+2|comment|		# "hello.md.eco" -> "eco"
+2|prop|		extension: null
+0|empty|
+2|comment|		# The extension used for our output file
+2|prop|		outExtension: null
+0|empty|
+2|comment|		# The file's extensions as an array
+2|comment|		# "hello.md.eco" -> ["md","eco"]
+2|prop|		extensions: null  # Array
+0|empty|
+2|comment|		# The file's name with the extension
+2|prop|		filename: null
+0|empty|
+2|comment|		# The full path of our source file, only necessary if called by @load
+2|prop|		fullPath: null
+0|empty|
+2|comment|		# The full directory path of our source file
+2|prop|		fullDirPath: null
+0|empty|
+2|comment|		# The output path of our file
+2|prop|		outPath: null
+0|empty|
+2|comment|		# The output path of our file's directory
+2|prop|		outDirPath: null
+0|empty|
+2|comment|		# The file's name with the rendered extension
+2|prop|		outFilename: null
+0|empty|
+2|comment|		# The relative path of our source file (with extensions)
+2|prop|		relativePath: null
+0|empty|
+2|comment|		# The relative output path of our file
+2|prop|		relativeOutPath: null
+0|empty|
+2|comment|		# The relative directory path of our source file
+2|prop|		relativeDirPath: null
+0|empty|
+2|comment|		# The relative output path of our file's directory
+2|prop|		relativeOutDirPath: null
+0|empty|
+2|comment|		# The relative base of our source file (no extension)
+2|prop|		relativeBase: null
+0|empty|
+2|comment|		# The relative base of our out file (no extension)
+2|prop|		relativeOutBase: null
+0|empty|
+2|comment|		# The MIME content-type for the source file
+2|prop|		contentType: null
+0|empty|
+2|comment|		# The MIME content-type for the out file
+2|prop|		outContentType: null
+0|empty|
+2|comment|		# The date object for when this document was created
+2|prop|		ctime: null
+0|empty|
+2|comment|		# The date object for when this document was last modified
+2|prop|		mtime: null
+0|empty|
+2|comment|		# The date object for when this document was last rendered
+2|prop|		rtime: null
+0|empty|
+2|comment|		# The date object for when this document was last written
+2|prop|		wtime: null
+0|empty|
+2|comment|		# Does the file actually exist on the file system
+2|prop|		exists: null
+0|empty|
+0|empty|
+2|comment|		# ---------------------------------
+2|comment|		# Content variables
+0|empty|
+2|comment|		# The encoding of the file
+2|prop|		encoding: null
+0|empty|
+2|comment|		# The raw contents of the file, stored as a String
+2|prop|		source: null
+0|empty|
+2|comment|		# The contents of the file, stored as a String
+2|prop|		content: null
+0|empty|
+0|empty|
+2|comment|		# ---------------------------------
+2|comment|		# User set variables
+0|empty|
+2|comment|		# The tags for this document
+2|prop|		tags: null  # CSV/Array
+0|empty|
+2|comment|		# Whether or not we should render this file
+2|prop|		render: false
+0|empty|
+2|comment|		# Whether or not we should write this file to the output directory
+2|prop|		write: true
+0|empty|
+2|comment|		# Whether or not we should write this file to the source directory
+2|prop|		writeSource: false
+0|empty|
+2|comment|		# Whether or not this file should be re-rendered on each request
+2|prop|		dynamic: false
+0|empty|
+2|comment|		# The title for this document
+2|comment|		# Useful for page headings
+2|prop|		title: null
+0|empty|
+2|comment|		# The name for this document, defaults to the outFilename
+2|comment|		# Useful for navigation listings
+2|prop|		name: null
+0|empty|
+2|comment|		# The date object for this document, defaults to mtime
+2|prop|		date: null
+0|empty|
+2|comment|		# The generated slug (url safe seo title) for this document
+2|prop|		slug: null
+0|empty|
+2|comment|		# The url for this document
+2|prop|		url: null
+0|empty|
+2|comment|		# Alternative urls for this document
+2|prop|		urls: null  # Array
+0|empty|
+2|comment|		# Whether or not we ignore this file
+2|prop|		ignored: false
+0|empty|
+2|comment|		# Whether or not we should treat this file as standalone (that nothing depends on it)
+2|prop|		standalone: false
+0|empty|
+0|empty|
+0|empty|
+1|comment|	# ---------------------------------
+1|comment|	# Helpers
+0|empty|
+1|comment|	# Set Buffer
+1|method|	setBuffer: (buffer) ->
+2|code|		buffer = new Buffer(buffer)  unless Buffer.isBuffer(buffer)
+2|code|		@bufferTime = @get('mtime') or new Date()
+2|code|		@buffer = buffer
+2|code|		@
+0|empty|
+1|comment|	# Get Buffer
+1|method|	getBuffer: ->
+2|code|		return @buffer
+0|empty|
+1|comment|	# Is Buffer Outdated
+1|comment|	# True if there is no buffer OR the buffer time is outdated
+1|method|	isBufferOutdated: ->
+2|code|		return @buffer? is false or @bufferTime < (@get('mtime') or new Date())
+0|empty|
+1|comment|	# Set Stat
+1|method|	setStat: (stat) ->
+2|code|		@stat = stat
+2|code|		@set(
+3|code|			ctime: new Date(stat.ctime)
+3|code|			mtime: new Date(stat.mtime)
+2|code|		)
+2|code|		@
+0|empty|
+1|comment|	# Get Stat
+1|method|	getStat: ->
+2|code|		return @stat
+0|empty|
+1|comment|	# Get Attributes
+1|prop|	getAttributes: (dereference=true) ->
+2|code|		attrs = @toJSON(dereference)
+2|code|		delete attrs.id
+2|code|		return attrs
+0|empty|
+1|comment|	# To JSON
+1|prop|	toJSON: (dereference=false) ->
+2|code|		data = super
+2|code|		data.meta = @getMeta().toJSON()
+2|code|		data = extendr.dereference(data)  if dereference is true
+2|code|		return data
+0|empty|
+1|comment|	# Get Meta
+1|method|	getMeta: (args...) ->
+2|code|		@meta = new Model()  if @meta is null
+2|code|		if args.length
+3|code|			return @meta.get(args...)
+2|code|		else
+3|code|			return @meta
+0|empty|
+1|comment|	# Set
+1|prop|	set: (attrs,opts) ->
+2|comment|		# Check
+2|code|		if typeChecker.isString(attrs)
+3|code|			newAttrs = {}
+3|code|			newAttrs[attrs] = opts
+3|code|			return @set(newAttrs, opts)
+0|empty|
+2|comment|		# Prepare
+2|code|		attrs = attrs.toJSON?() ? attrs
+0|empty|
+2|comment|		# Extract options
+2|code|		options = @extractOptions(attrs)
+0|empty|
+2|comment|		# Perform the set
+2|code|		super(attrs, opts)
+0|empty|
+2|comment|		# Apply the options
+2|code|		@setOptions(options, opts)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Set Defaults
+1|prop|	setDefaults: (attrs,opts) ->
+2|comment|		# Prepare
+2|code|		attrs = attrs.toJSON?() ? attrs
+0|empty|
+2|comment|		# Extract options
+2|code|		options = @extractOptions(attrs)
+0|empty|
+2|comment|		# Apply
+2|code|		super(attrs, opts)
+0|empty|
+2|comment|		# Apply the options
+2|code|		@setOptions(options, opts)
+0|empty|
+2|comment|		# Chain
+2|code|		return @
+0|empty|
+1|comment|	# Set Meta
+1|prop|	setMeta: (attrs,opts) ->
+2|comment|		# Prepare
+2|code|		attrs = attrs.toJSON?() ? attrs
+0|empty|
+2|comment|		# Extract options
+2|code|		options = @extractOptions(attrs)
+0|empty|
+2|comment|		# Apply
+2|code|		@getMeta().set(attrs, opts)
+2|code|		@set(attrs, opts)
+0|empty|
+2|comment|		# Apply the options
+2|code|		@setOptions(options, opts)
+0|empty|
+2|comment|		# Chain
+2|code|		return @
+0|empty|
+1|comment|	# Set Meta Defaults
+1|prop|	setMetaDefaults: (attrs,opts) ->
+2|comment|		# Prepare
+2|code|		attrs = attrs.toJSON?() ? attrs
+0|empty|
+2|comment|		# Extract options
+2|code|		options = @extractOptions(attrs)
+0|empty|
+2|comment|		# Apply
+2|code|		@getMeta().setDefaults(attrs, opts)
+2|code|		@setDefaults(attrs, opts)
+0|empty|
+2|comment|		# Apply the options
+2|code|		@setOptions(options, opts)
+0|empty|
+2|comment|		# Chain
+2|code|		return @
+0|empty|
+1|comment|	# Get Filename
+1|prop|	getFilename: (opts={}) ->
+2|comment|		# Prepare
+2|code|		{fullPath,relativePath,filename} = opts
+0|empty|
+2|comment|		# Determine
+2|code|		result = (filename ? @get('filename'))
+2|code|		if !result
+3|code|			result = (fullPath ? @get('fullPath')) or (relativePath ? @get('relativePath'))
+3|code|			result = pathUtil.basename(result)  if result
+2|code|		result or= null
+0|empty|
+2|comment|		# REturn
+2|code|		return result
+0|empty|
+1|comment|	# Get File Path
+1|prop|	getFilePath: (opts={}) ->
+2|comment|		# Prepare
+2|code|		{fullPath,relativePath,filename} = opts
+0|empty|
+2|comment|		# Determine
+2|code|		result = (fullPath ? @get('fullPath')) or (relativePath ? @get('relativePath')) or (filename ? @get('filename')) or null
+0|empty|
+2|comment|		# Return
+2|code|		return result
+0|empty|
+1|comment|	# Get Extensions
+1|prop|	getExtensions: ({extensions,filename}) ->
+2|code|		extensions or= @get('extensions') or null
+2|code|		if (extensions or []).length is 0
+3|code|			filename = @getFilename({filename})
+3|code|			if filename
+4|code|				extensions = docpadUtil.getExtensions(filename)
+2|code|		return extensions or null
+0|empty|
+1|comment|	# Get Content
+1|method|	getContent: ->
+2|code|		return @get('content') or @getBuffer()
+0|empty|
+1|comment|	# Get Out Content
+1|method|	getOutContent: ->
+2|code|		return @getContent()
+0|empty|
+1|comment|	# Is Text?
+1|method|	isText: ->
+2|code|		return @get('encoding') isnt 'binary'
+0|empty|
+1|comment|	# Is Binary?
+1|method|	isBinary: ->
+2|code|		return @get('encoding') is 'binary'
+0|empty|
+1|comment|	# Set the url for the file
+1|method|	setUrl: (url) ->
+2|code|		@addUrl(url)
+2|code|		@set({url})
+2|code|		@
+0|empty|
+1|comment|	# Add a url
+1|comment|	# Allows our file to support multiple urls
+1|method|	addUrl: (url) ->
+2|comment|		# Multiple Urls
+2|code|		if url instanceof Array
+3|code|			for newUrl in url
+4|code|				@addUrl(newUrl)
+0|empty|
+2|comment|		# Single Url
+2|code|		else if url
+3|code|			found = false
+3|code|			urls = @get('urls')
+3|code|			for existingUrl in urls
+4|code|				if existingUrl is url
+5|code|					found = true
+5|code|					break
+3|code|			urls.push(url)  if not found
+3|code|			@trigger('change:urls', @, urls, {})
+3|code|			@trigger('change', @, {})
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Remove a url
+1|comment|	# Removes a url from our file
+1|method|	removeUrl: (userUrl) ->
+2|code|		urls = @get('urls')
+2|code|		for url,index in urls
+3|code|			if url is userUrl
+4|code|				urls.splice(index,1)
+4|code|				break
+2|code|		@
+0|empty|
+1|comment|	# Get a Path
+1|comment|	# If the path starts with `.` then we get the path in relation to the document that is calling it
+1|comment|	# Otherwise we just return it as normal
+1|prop|	getPath: (relativePath, parentPath) ->
+2|code|		if /^\./.test(relativePath)
+3|code|			relativeDirPath = @get('relativeDirPath')
+3|code|			path = pathUtil.join(relativeDirPath, relativePath)
+2|code|		else
+3|code|			if parentPath
+4|code|				path = pathUtil.join(parentPath, relativePath)
+3|code|			else
+4|code|				path = relativePath
+2|code|		return path
+0|empty|
+0|empty|
+1|comment|	# ---------------------------------
+1|comment|	# Actions
+0|empty|
+1|comment|	# The action runner instance bound to docpad
+1|prop|	actionRunnerInstance: null
+1|inlineMethod|	getActionRunner: -> @actionRunnerInstance
+1|inlineMethod|	action: (args...) => docpadUtil.action.apply(@, args)
+0|empty|
+1|comment|	# Initialize
+1|prop|	initialize: (attrs,opts={}) ->
+2|comment|		# Defaults
+2|code|		file = @
+2|code|		@attributes ?= {}
+2|code|		@attributes.extensions ?= []
+2|code|		@attributes.urls ?= []
+2|code|		now = new Date()
+2|code|		@attributes.ctime ?= now
+2|code|		@attributes.mtime ?= now
+0|empty|
+2|comment|		# Id
+2|code|		@id ?= @attributes.id ?= @cid
+0|empty|
+2|comment|		# Options
+2|code|		@setOptions(opts)
+0|empty|
+2|comment|		# Create our action runner
+2|code|		@actionRunnerInstance = new TaskGroup("file action runner").run().on 'complete', (err) ->
+3|code|			file.emit('error', err)  if err
+0|empty|
+2|comment|		# Super
+2|code|		super
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Load
+1|comment|	# If the fullPath exists, load the file
+1|comment|	# If it doesn't, then parse and normalize the file
+1|prop|	load: (opts={},next) ->
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts,next)
+2|code|		file = @
+2|code|		opts.exists ?= null
+0|empty|
+2|comment|		# Fetch
+2|code|		fullPath = @get('fullPath')
+2|code|		filePath = @getFilePath({fullPath})
+0|empty|
+2|comment|		# Apply options
+2|code|		file.set(exists: opts.exists)  if opts.exists?
+2|code|		file.setStat(opts.stat)        if opts.stat?
+2|code|		file.setBuffer(opts.buffer)    if opts.buffer?
+0|empty|
+2|comment|		# Tasks
+2|code|		tasks = new TaskGroup("load tasks for file: #{filePath}", {next})
+3|code|			.on('item.run', (item) ->
+4|code|				file.log("debug", "#{item.getConfig().name}: #{file.type}: #{filePath}")
+3|code|			)
+0|empty|
+2|comment|		# Detect the file
+2|code|		tasks.addTask "Detect the file", (complete) ->
+3|code|			if fullPath and opts.exists is null
+4|code|				safefs.exists fullPath, (exists) ->
+5|code|					opts.exists = exists
+5|code|					file.set(exists: opts.exists)
+5|code|					return complete()
+3|code|			else
+4|code|				return complete()
+0|empty|
+2|code|		tasks.addTask "Stat the file and cache the result", (complete) ->
+3|code|			# Otherwise fetch new stat
+3|code|			if fullPath and opts.exists and opts.stat? is false
+4|code|				return safefs.stat fullPath, (err,fileStat) ->
+5|code|					return complete(err)  if err
+5|code|					file.setStat(fileStat)
+5|code|					return complete()
+3|code|			else
+4|code|				return complete()
+0|empty|
+2|comment|		# Process the file
+2|code|		tasks.addTask "Read the file and cache the result", (complete) ->
+3|code|			# Otherwise fetch new buffer
+3|code|			if fullPath and opts.exists and opts.buffer? is false and file.isBufferOutdated()
+4|code|				return safefs.readFile fullPath, (err,buffer) ->
+5|code|					return complete(err)  if err
+5|code|					file.setBuffer(buffer)
+5|code|					return complete()
+3|code|			else
+4|code|				return complete()
+0|empty|
+2|code|		tasks.addTask "Load -> Parse", (complete) ->
+3|code|			file.parse(complete)
+0|empty|
+2|code|		tasks.addTask "Parse -> Normalize", (complete) ->
+3|code|			file.normalize(complete)
+0|empty|
+2|code|		tasks.addTask "Normalize -> Contextualize", (complete) ->
+3|code|			file.contextualize(complete)
+0|empty|
+2|comment|		# Run the tasks
+2|code|		tasks.run()
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Parse
+1|comment|	# Parse our buffer and extract meaningful data from it
+1|comment|	# next(err)
+1|prop|	parse: (opts={},next) ->
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts, next)
+2|code|		buffer = @getBuffer()
+2|code|		relativePath = @get('relativePath')
+2|code|		encoding = opts.encoding or @get('encoding') or null
+2|code|		changes = {}
+0|empty|
+2|comment|		# Detect Encoding
+2|code|		if buffer and encoding? is false or opts.reencode is true
+3|code|			isText = isTextOrBinary.isTextSync(relativePath, buffer)
+0|empty|
+3|code|			# Text
+3|code|			if isText is true
+4|code|				# Detect source encoding if not manually specified
+4|code|				if @detectEncoding
+5|code|					jschardet ?= require('jschardet')
+5|code|					encoding ?= jschardet.detect(buffer)?.encoding
+0|empty|
+4|code|				# Default the encoding
+4|code|				encoding or= 'utf8'
+0|empty|
+4|code|				# Convert into utf8
+4|code|				if docpadUtil.isStandardEncoding(encoding) is false
+5|code|					# Import optional dependencies
+5|code|					try
+5|code|						#Iconv ?= require('iconv').Iconv
+5|code|						encodingUtil ?= require('encoding')
+5|code|						# ^ when we prove encoding/iconv-lite works better than iconv
+5|code|						# we can move this out of the try catch and make detectEncoding standard
+5|code|					catch err
+5|code|						# ignore
+0|empty|
+5|code|					# Can convert?
+5|code|					if encodingUtil?
+5|code|						@log('info', "Converting encoding #{encoding} to UTF-8 on #{relativePath}")
+0|empty|
+5|code|						# Convert
+5|code|						d = require('domain').create()
+5|code|						d.on 'error', =>
+5|code|							@log('warn', "Encoding conversion failed, therefore we cannot convert the encoding #{encoding} to UTF-8 on #{relativePath}")
+5|code|						d.run ->
+5|code|							#buffer = new Iconv(encoding, 'utf8').convert(buffer)
+5|code|							buffer = encodingUtil.convert(buffer, 'utf8', encoding)  # content, to, from
+0|empty|
+5|code|					# Can't convert
+5|code|					else
+5|code|						@log('warn', "Encoding utilities did not load, therefore we cannot convert the encoding #{encoding} to UTF-8 on #{relativePath}")
+0|empty|
+4|code|				# Apply
+4|code|				changes.encoding = encoding
+0|empty|
+3|code|			# Binary
+3|code|			else
+4|code|				# Set
+4|code|				encoding = changes.encoding = 'binary'
+0|empty|
+2|comment|		# Binary
+2|code|		if encoding is 'binary'
+3|code|			# Set
+3|code|			content = source = ''
+0|empty|
+3|code|			# Apply
+3|code|			changes.content = content
+3|code|			changes.source = source
+0|empty|
+2|comment|		# Text
+2|code|		else
+3|code|			# Default
+3|code|			encoding = changes.encoding = 'utf8'  if encoding? is false
+0|empty|
+3|code|			# Set
+3|code|			source = buffer?.toString('utf8') or ''
+3|code|			content = source
+0|empty|
+3|code|			# Apply
+3|code|			changes.content = content
+3|code|			changes.source = source
+0|empty|
+2|comment|		# Apply
+2|code|		@set(changes)
+0|empty|
+2|comment|		# Next
+2|code|		next()
+2|code|		@
+0|empty|
+1|comment|	# Normalize data
+1|comment|	# Normalize any parsing we have done, as if a value has updates it may have consequences on another value. This will ensure everything is okay.
+1|comment|	# next(err)
+1|prop|	normalize: (opts={},next) ->
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts,next)
+2|code|		changes = {}
+2|code|		meta = @getMeta()
+0|empty|
+2|comment|		# App specified
+2|code|		filename = opts.filename or @get('filename') or null
+2|code|		relativePath = opts.relativePath or @get('relativePath') or null
+2|code|		fullPath = opts.fullPath or @get('fullPath') or null
+2|code|		mtime = opts.mtime or @get('mtime') or null
+0|empty|
+2|comment|		# User specified
+2|code|		tags = opts.tags or meta.get('tags') or null
+2|code|		date = opts.date or meta.get('date') or null
+2|code|		name = opts.name or meta.get('name') or null
+2|code|		slug = opts.slug or meta.get('slug') or null
+2|code|		url = opts.url or meta.get('url') or null
+2|code|		contentType = opts.contentType or meta.get('contentType') or null
+2|code|		outContentType = opts.outContentType or meta.get('outContentType') or null
+2|code|		outFilename = opts.outFilename or meta.get('outFilename') or null
+2|code|		outExtension = opts.outExtension or meta.get('outExtension') or null
+2|code|		outPath = opts.outPath or meta.get('outPath') or null
+0|empty|
+2|comment|		# Force specifeid
+2|code|		extensions = null
+2|code|		extension = null
+2|code|		basename = null
+2|code|		outBasename = null
+2|code|		relativeOutPath = null
+2|code|		relativeDirPath = null
+2|code|		relativeOutDirPath = null
+2|code|		relativeBase = null
+2|code|		relativeOutBase = null
+2|code|		outDirPath = null
+2|code|		fullDirPath = null
+0|empty|
+2|comment|		# filename
+2|code|		changes.filename = filename = @getFilename({filename, relativePath, fullPath})
+0|empty|
+2|comment|		# check
+2|code|		if !filename
+3|code|			err = new Error('filename is required, it can be specified via filename, fullPath, or relativePath')
+3|code|			return next(err)
+0|empty|
+2|comment|		# relativePath
+2|code|		if !relativePath and filename
+3|code|			changes.relativePath = relativePath = filename
+0|empty|
+2|comment|		# force basename
+2|code|		changes.basename = basename = docpadUtil.getBasename(filename)
+0|empty|
+2|comment|		# force extensions
+2|code|		changes.extensions = extensions = @getExtensions({filename})
+0|empty|
+2|comment|		# force extension
+2|code|		changes.extension = extension = docpadUtil.getExtension(extensions)
+0|empty|
+2|comment|		# force fullDirPath
+2|code|		if fullPath
+3|code|			changes.fullDirPath = fullDirPath = docpadUtil.getDirPath(fullPath)
+0|empty|
+2|comment|		# force relativeDirPath
+2|code|		changes.relativeDirPath = relativeDirPath = docpadUtil.getDirPath(relativePath)
+0|empty|
+2|comment|		# force relativeBase
+2|code|		changes.relativeBase = relativeBase =
+3|code|			if relativeDirPath
+4|code|				pathUtil.join(relativeDirPath, basename)
+3|code|			else
+4|code|				basename
+0|empty|
+2|comment|		# force contentType
+2|code|		if !contentType
+3|code|			changes.contentType = contentType = mime.lookup(fullPath or relativePath)
+0|empty|
+2|comment|		# adjust tags
+2|code|		if tags and typeChecker.isArray(tags) is false
+3|code|			changes.tags = tags = String(tags).split(/[\s,]+/)
+0|empty|
+2|comment|		# force date
+2|code|		if !date
+3|code|			changes.date = date = mtime or @get('date') or new Date()
+0|empty|
+2|comment|		# force outFilename
+2|code|		if !outFilename and !outPath
+3|code|			changes.outFilename = outFilename = docpadUtil.getOutFilename(basename, outExtension or extensions.join('.'))
+0|empty|
+2|comment|		# force outPath
+2|code|		if !outPath
+3|code|			changes.outPath = outPath =
+4|code|				if @rootOutDirPath
+5|code|					pathUtil.resolve(@rootOutDirPath, relativeDirPath, outFilename)
+4|code|				else
+5|code|					null
+3|code|			# ^ we still do this set as outPath is a meta, and it may still be set as an attribute
+0|empty|
+2|comment|		# refresh outFilename
+2|code|		if outPath
+3|code|			changes.outFilename = outFilename = docpadUtil.getFilename(outPath)
+0|empty|
+2|comment|		# force outDirPath
+2|code|		changes.outDirPath = outDirPath =
+3|code|			if outPath
+4|code|				docpadUtil.getDirPath(outPath)
+3|code|			else
+4|code|				null
+0|empty|
+2|comment|		# force outBasename
+2|code|		changes.outBasename = outBasename = docpadUtil.getBasename(outFilename)
+0|empty|
+2|comment|		# force outExtension
+2|code|		changes.outExtension = outExtension = docpadUtil.getExtension(outFilename)
+0|empty|
+2|comment|		# force relativeOutPath
+2|code|		changes.relativeOutPath = relativeOutPath =
+3|code|			if outPath
+4|code|				outPath.replace(@rootOutDirPath, '').replace(/^[\/\\]/, '')
+3|code|			else
+4|code|				pathUtil.join(relativeDirPath, outFilename)
+0|empty|
+2|comment|		# force relativeOutDirPath
+2|code|		changes.relativeOutDirPath = relativeOutDirPath = docpadUtil.getDirPath(relativeOutPath)
+0|empty|
+2|comment|		# force relativeOutBase
+2|code|		changes.relativeOutBase = relativeOutBase = pathUtil.join(relativeOutDirPath, outBasename)
+0|empty|
+2|comment|		# force name
+2|code|		if !name
+3|code|			changes.name = name = outFilename
+0|empty|
+2|comment|		# force url
+2|code|		_defaultUrl = docpadUtil.getUrl(relativeOutPath)
+2|code|		if url
+3|code|			@setUrl(url)
+3|code|			@addUrl(_defaultUrl)
+2|code|		else
+3|code|			@setUrl(_defaultUrl)
+0|empty|
+2|comment|		# force outContentType
+2|code|		if !outContentType and contentType
+3|code|			changes.outContentType = outContentType = mime.lookup(outPath or relativeOutPath) or contentType
+0|empty|
+2|comment|		# force slug
+2|code|		if !slug
+3|code|			changes.slug = slug = docpadUtil.getSlug(relativeOutBase)
+0|empty|
+2|comment|		# Force date objects
+2|code|		changes.wtime = wtime = new Date(wtime)  if typeof wtime is 'string'
+2|code|		changes.rtime = rtime = new Date(rtime)  if typeof rtime is 'string'
+2|code|		changes.ctime = ctime = new Date(ctime)  if typeof ctime is 'string'
+2|code|		changes.mtime = mtime = new Date(mtime)  if typeof mtime is 'string'
+2|code|		changes.date  = date  = new Date(date)   if typeof date is 'string'
+0|empty|
+2|comment|		# Apply
+2|code|		@set(changes)
+0|empty|
+2|comment|		# Next
+2|code|		next()
+2|code|		@
+0|empty|
+1|comment|	# Contextualize data
+1|comment|	# Put our data into perspective of the bigger picture. For instance, generate the url for it's rendered equivalant.
+1|comment|	# next(err)
+1|prop|	contextualize: (opts={},next) ->
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts,next)
+0|empty|
+2|comment|		# Forward
+2|code|		next()
+2|code|		@
+0|empty|
+0|empty|
+1|comment|	# Render
+1|comment|	# Render this file
+1|comment|	# next(err,result,document)
+1|prop|	render: (opts={},next) ->
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts, next)
+2|code|		file = @
+0|empty|
+2|comment|		# Apply
+2|code|		file.attributes.rtime = new Date()
+0|empty|
+2|comment|		# Forward
+2|code|		next(null, file.getOutContent(), file)
+2|code|		@
+0|empty|
+0|empty|
+1|comment|	# ---------------------------------
+1|comment|	# CRUD
+0|empty|
+1|comment|	# Write the out file
+1|comment|	# next(err)
+1|prop|	write: (opts,next) ->
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts, next)
+2|code|		file = @
+0|empty|
+2|comment|		# Fetch
+2|code|		opts.path      or= file.get('outPath')
+2|code|		opts.encoding  or= file.get('encoding') or 'utf8'
+2|code|		opts.content   or= file.getOutContent()
+2|code|		opts.type      or= 'out file'
+0|empty|
+2|comment|		# Check
+2|comment|		# Sometimes the out path could not be set if we are early on in the process
+2|code|		unless opts.path
+3|code|			next()
+3|code|			return @
+0|empty|
+2|comment|		# Convert utf8 to original encoding
+2|code|		unless opts.encoding.toLowerCase() in ['ascii','utf8','utf-8','binary']
+3|code|			# Import optional dependencies
+3|code|			try
+4|code|				#Iconv ?= require('iconv').Iconv
+4|code|				encodingUtil ?= require('encoding')
+3|code|			catch err
+4|code|				# ignore
+0|empty|
+3|code|			# Convert
+3|code|			if encodingUtil?
+4|code|				@log('info', "Converting encoding UTF-8 to #{opts.encoding} on #{opts.path}")
+4|code|				try
+5|code|					#opts.content = new Iconv('utf8',opts.encoding).convert(opts.content)
+5|code|					opts.content = encodingUtil.convert(opts.content, opts.encoding, 'utf8')  # content, to, from
+4|code|				catch err
+5|code|					@log('warn', "Encoding conversion failed, therefore we cannot convert the encoding UTF-8 to #{opts.encoding} on #{opts.path}")
+3|code|			else
+4|code|				@log('warn', "Encoding utilities did not load, therefore we cannot convert the encoding UTF-8 to #{opts.encoding} on #{opts.path}")
+0|empty|
+2|comment|		# Log
+2|code|		file.log 'debug', "Writing the #{opts.type}: #{opts.path} #{opts.encoding}"
+0|empty|
+2|comment|		# Write data
+2|code|		safefs.writeFile opts.path, opts.content, (err) ->
+3|code|			# Check
+3|code|			return next(err)  if err
+0|empty|
+3|code|			# Update the wtime
+3|code|			if opts.type is 'out file'
+4|code|				file.attributes.wtime = new Date()
+0|empty|
+3|code|			# Log
+3|code|			file.log 'debug', "Wrote the #{opts.type}: #{opts.path} #{opts.encoding}"
+0|empty|
+3|code|			# Next
+3|code|			return next()
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Write the source file
+1|comment|	# next(err)
+1|prop|	writeSource: (opts,next) ->
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts, next)
+2|code|		file = @
+0|empty|
+2|comment|		# Fetch
+2|code|		opts.path      or= file.get('fullPath')
+2|code|		opts.content   or= (file.getContent() or '').toString('')
+2|code|		opts.type      or= 'source file'
+0|empty|
+2|comment|		# Write data
+2|code|		@write(opts, next)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Delete the out file
+1|comment|	# next(err)
+1|code|	'delete': (opts,next) ->
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts, next)
+2|code|		file = @
+0|empty|
+2|comment|		# Fetch
+2|code|		opts.path      or= file.get('outPath')
+2|code|		opts.type      or= 'out file'
+0|empty|
+2|comment|		# Check
+2|comment|		# Sometimes the out path could not be set if we are early on in the process
+2|code|		unless opts.path
+3|code|			next()
+3|code|			return @
+0|empty|
+2|comment|		# Log
+2|code|		file.log 'debug', "Delete the #{opts.type}: #{opts.path}"
+0|empty|
+2|comment|		# Check existance
+2|code|		safefs.exists opts.path, (exists) ->
+3|code|			# Exit if it doesn't exist
+3|code|			return next()  unless exists
+0|empty|
+3|code|			# If it does exist delete it
+3|code|			safefs.unlink opts.path, (err) ->
+4|code|				# Check
+4|code|				return next(err)  if err
+0|empty|
+4|code|				# Log
+4|code|				file.log 'debug', "Deleted the #{opts.type}: #{opts.path}"
+0|empty|
+4|code|				# Next
+4|code|				next()
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Delete the source file
+1|comment|	# next(err)
+1|prop|	deleteSource: (opts,next) ->
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts, next)
+2|code|		file = @
+0|empty|
+2|comment|		# Fetch
+2|code|		opts.path      or= file.get('fullPath')
+2|code|		opts.type      or= 'source file'
+0|empty|
+2|comment|		# Write data
+2|code|		@delete(opts, next)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+0|comment|# Export
+0|module|module.exports = FileModel

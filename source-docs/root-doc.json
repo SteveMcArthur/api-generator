@@ -1,0 +1,18 @@
+[{
+		"text" : "Docpad",
+		"id" : "root",
+		"file" : "docpad-doc.json",
+		"class" : "DocPad",
+		"children" : [{
+				"text" : "DocPad.exports",
+				"file" : "docpad-doc.json",
+				"class" : "DocPad.exports"
+
+			}]
+		},
+	"base-doc.json",
+	"plugin-doc.json",
+	"plugin-loader-doc.json",
+	"testers-doc.json",
+	"util-doc.json"
+]

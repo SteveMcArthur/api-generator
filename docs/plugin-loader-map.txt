@@ -1,0 +1,236 @@
+0|comment|# Requires
+0|code|pathUtil = require('path')
+0|code|semver = require('semver')
+0|code|safefs = require('safefs')
+0|code|util = require('util')
+0|empty|
+0|comment|# Define Plugin Loader
+0|class|class PluginLoader
+0|empty|
+1|comment|	# ---------------------------------
+1|comment|	# Constructed
+0|empty|
+1|comment|	# DocPad Instance
+1|prop|	docpad: null
+0|empty|
+1|comment|	# BasePlugin Class
+1|prop|	BasePlugin: null
+0|empty|
+1|comment|	# The full path of the plugin's directory
+1|prop|	dirPath: null
+0|empty|
+0|empty|
+1|comment|	# ---------------------------------
+1|comment|	# Loaded
+0|empty|
+1|comment|	# The full path of the plugin's package.json file
+1|prop|	packagePath: null
+0|empty|
+1|comment|	# The parsed contents of the plugin's package.json file
+1|prop|	packageData: {}
+0|empty|
+1|comment|	# The full path of the plugin's main file
+1|prop|	pluginPath: null
+0|empty|
+1|comment|	# The parsed content of the plugin's main file
+1|prop|	pluginClass: {}
+0|empty|
+1|comment|	# Plugin name
+1|prop|	pluginName: null
+0|empty|
+1|comment|	# Plugin version
+1|prop|	pluginVersion: null
+0|empty|
+1|comment|	# Node modules path
+1|prop|	nodeModulesPath: null
+0|empty|
+0|empty|
+1|comment|	# ---------------------------------
+1|comment|	# Functions
+0|empty|
+1|comment|	# Constructor
+1|prop|	constructor: ({@docpad,@dirPath,@BasePlugin}) ->
+2|comment|		# Prepare
+2|code|		docpad = @docpad
+0|empty|
+2|comment|		# Apply
+2|code|		@pluginName = pathUtil.basename(@dirPath).replace(/^docpad-plugin-/,'')
+2|code|		@pluginClass = {}
+2|code|		@packageData = {}
+2|code|		@nodeModulesPath = pathUtil.resolve(@dirPath, 'node_modules')
+0|empty|
+1|comment|	# Exists
+1|comment|	# Loads the package.json file and extracts the main path
+1|comment|	# next(err,exists)
+1|method|	exists: (next) ->
+2|comment|		# Prepare
+2|code|		packagePath = @packagePath or pathUtil.resolve(@dirPath, "package.json")
+2|code|		failure = (err=null) ->
+3|code|			return next(err, false)
+2|code|		success = =>
+3|code|			return next(null, true)
+0|empty|
+2|comment|		# Check the package
+2|code|		safefs.exists packagePath, (exists) =>
+3|code|			return failure()  unless exists
+0|empty|
+3|code|			# Apply
+3|code|			@packagePath = packagePath
+0|empty|
+3|code|			# Read the package
+3|code|			safefs.readFile packagePath, (err,data) =>
+4|code|				return failure(err)  if err
+0|empty|
+4|code|				# Parse the package
+4|code|				try
+5|code|					@packageData = JSON.parse data.toString()
+4|code|				catch err
+5|code|					return failure(err)
+4|code|				finally
+5|code|					return failure()  unless @packageData
+0|empty|
+4|code|				# Extract the version and main
+4|code|				pluginVersion = @packageData.version
+4|code|				pluginPath = @packageData.main and pathUtil.join(@dirPath, @packageData.main)
+0|empty|
+4|code|				# Check defined
+4|code|				return failure()  unless pluginVersion
+4|code|				return failure()  unless pluginPath
+0|empty|
+4|code|				# Success
+4|code|				@pluginVersion = pluginVersion
+4|code|				@pluginPath = pluginPath
+4|code|				return success()
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Unsupported
+1|comment|	# Check if this plugin is unsupported
+1|comment|	# next(err,supported)
+1|method|	unsupported: (next) ->
+2|comment|		# Prepare
+2|code|		docpad = @docpad
+0|empty|
+2|comment|		# Extract
+2|code|		version = @packageData.version
+2|code|		keywords = @packageData.keywords or []
+2|code|		platforms = @packageData.platforms or []
+2|code|		engines = @packageData.engines or {}
+2|code|		peerDependencies = @packageData.peerDependencies or {}
+0|empty|
+2|comment|		# Check
+2|code|		unsupported =
+3|code|			# Check type
+3|code|			if 'docpad-plugin' not in keywords
+4|code|				'type'
+0|empty|
+3|code|			# Check version
+3|code|			else if version and not semver.satisfies(version, docpad.pluginVersion)
+4|code|				'version-plugin'
+0|empty|
+3|code|			# Check platform
+3|code|			else if platforms.length and process.platform not in platforms
+4|code|				'platform'
+0|empty|
+3|code|			# Check node engine
+3|code|			else if engines.node? and not semver.satisfies(process.version, engines.node)
+4|code|				'engine-node'
+0|empty|
+3|code|			# Check docpad engine
+3|code|			else if engines.docpad? and not semver.satisfies(docpad.getVersion(), engines.docpad)
+4|code|				'version-docpad'
+0|empty|
+3|code|			# Check docpad peerDependencies
+3|code|			else if peerDependencies.docpad? and not semver.satisfies(docpad.getVersion(), peerDependencies.docpad)
+4|code|				'version-docpad'
+0|empty|
+3|code|			# Supported
+3|code|			else
+4|code|				false
+0|empty|
+2|comment|		# Supported
+2|code|		next(null, unsupported)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Install
+1|comment|	# Installs the plugins node modules
+1|comment|	# next(err)
+1|method|	install: (next) ->
+2|comment|		# Prepare
+2|code|		docpad = @docpad
+0|empty|
+2|comment|		# Only install if we have a package path
+2|code|		if @packagePath
+3|code|			# Install npm modules
+3|code|			docpad.initNodeModules(
+4|code|				path: @dirPath
+4|code|				next: (err,results) ->
+5|code|					# Forward
+5|code|					return next(err)
+3|code|			)
+2|code|		else
+3|code|			# Continue
+3|code|			next()
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Load
+1|comment|	# Load in the pluginClass from the pugin file
+1|comment|	# next(err,pluginClass)
+1|method|	load: (next) ->
+2|comment|		# Prepare
+2|code|		docpad = @docpad
+2|code|		locale = docpad.getLocale()
+0|empty|
+2|comment|		# Load
+2|code|		try
+3|code|			# Load in our plugin
+3|code|			@pluginClass = require(@pluginPath)(@BasePlugin)
+3|code|			@pluginClass::version ?= @pluginVersion
+3|code|			pluginPrototypeName = @pluginClass::name
+0|empty|
+3|code|			# Checks
+3|code|			# Alphanumeric
+3|code|			if /^[a-z0-9]+$/.test(@pluginName) is false
+4|code|				validPluginName = @pluginName.replace(/[^a-z0-9]/,'')
+4|code|				docpad.log('warn', util.format(locale.pluginNamingConventionInvalid, @pluginName, validPluginName))
+3|code|			# Same name
+3|code|			if pluginPrototypeName is null
+4|code|				@pluginClass::name = @pluginName
+4|code|				docpad.log('warn',  util.format(locale.pluginPrototypeNameUndefined, @pluginName))
+3|code|			else if pluginPrototypeName isnt @pluginName
+4|code|				docpad.log('warn', util.format(locale.pluginPrototypeNameDifferent, @pluginName, pluginPrototypeName))
+2|code|		catch err
+3|code|			# An error occured, return it
+3|code|			return next(err, null)
+0|empty|
+2|comment|		# Return our plugin
+2|code|		next(null,@pluginClass)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Create Instance
+1|comment|	# next(err,pluginInstance)
+1|prop|	create: (config,next) ->
+2|comment|		# Load
+2|code|		try
+3|code|			# Create instance with merged configuration
+3|code|			docpad = @docpad
+3|code|			pluginInstance = new @pluginClass({docpad,config})
+2|code|		catch err
+3|code|			# An error occured, return it
+3|code|			return next(err, null)
+0|empty|
+2|comment|		# Return our instance
+2|code|		return next(null, pluginInstance)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+0|empty|
+0|comment|# Export

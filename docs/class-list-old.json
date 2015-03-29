@@ -1,0 +1,131 @@
+{
+	"text" : "Docpad Lib",
+	"id" : "root",
+	"children" : [{
+			"text" : "base",
+			"id" : "base",
+			"children" : [{
+					"id" : 1,
+					"text" : "Events",
+					"file" : "base-doc.json",
+					"children" : true
+				}, {
+					"id" : 4,
+					"text" : "Model",
+					"file" : "base-doc.json",
+					"children" : true
+				}, {
+					"id" : 8,
+					"text" : "Collection",
+					"file" : "base-doc.json",
+					"children" : true
+				}, {
+					"id" : 12,
+					"text" : "View",
+					"file" : "base-doc.json",
+					"children" : true
+				}, {
+					"id" : 15,
+					"text" : "QueryCollection",
+					"file" : "base-doc.json",
+					"children" : true
+				}, {
+					"id" : 20,
+					"text" : "{queryEngine,Backbone,Events,Model,Collection,View,QueryCollection}",
+					"file" : "base-doc.json",
+					"children" : true
+				}
+			],
+			"typ" : "namespace",
+			"file" : "base.coffee"
+		}, {
+			"text" : "docpad",
+			"id" : "docpad",
+			"children" : [{
+					"id" : 21,
+					"text" : "DocPad",
+					"file" : "docpad-doc.json",
+					"children" : true
+				}, {
+					"id" : 288,
+					"text" : "DocPad.exports",
+					"file" : "docpad-doc.json",
+					"children" : true
+				}
+			],
+			"typ" : "namespace",
+			"file" : "docpad.coffee"
+		}, {
+			"text" : "plugin",
+			"id" : "plugin",
+			"children" : [{
+					"id" : 293,
+					"text" : "BasePlugin",
+					"file" : "plugin-doc.json",
+					"children" : true
+				}, {
+					"id" : 309,
+					"text" : "BasePlugin",
+					"file" : "plugin-doc.json",
+					"children" : true
+				}
+			],
+			"typ" : "namespace",
+			"file" : "plugin.coffee"
+		}, {
+			"text" : "plugin-loader",
+			"id" : "plugin-loader",
+			"children" : [{
+					"id" : 310,
+					"text" : "PluginLoader",
+					"file" : "plugin-loader-doc.json",
+					"children" : true
+				}
+			],
+			"typ" : "namespace",
+			"file" : "plugin-loader.coffee"
+		}, {
+			"text" : "testers",
+			"id" : "testers",
+			"children" : [{
+					"id" : 327,
+					"text" : "PluginTester",
+					"file" : "testers-doc.json",
+					"children" : true
+				}, {
+					"id" : 360,
+					"text" : "ServerTester",
+					"file" : "testers-doc.json",
+					"children" : true
+				}, {
+					"id" : 361,
+					"text" : "RendererTester",
+					"file" : "testers-doc.json",
+					"children" : true
+				}, {
+					"id" : 363,
+					"text" : "testers",
+					"file" : "testers-doc.json",
+					"children" : true
+				}
+			],
+			"typ" : "namespace",
+			"file" : "testers.coffee"
+		}, {
+			"text" : "util",
+			"id" : "util",
+			"children" : [{
+					"id" : 364,
+					"text" : "docpadUtil",
+					"file" : "util-doc.json",
+					"children" : true
+				}
+			],
+			"typ" : "namespace",
+			"file" : "util.coffee"
+		}
+	],
+	"state" : {
+		"opened" : true
+	}
+}

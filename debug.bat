@@ -1,0 +1,1 @@
+cmd.exe /k node-debug server.js

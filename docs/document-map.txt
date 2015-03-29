@@ -1,0 +1,657 @@
+0|comment|# Necessary
+0|code|pathUtil = require('path')
+0|code|extendr = require('extendr')
+0|code|eachr = require('eachr')
+0|code|{TaskGroup} = require('taskgroup')
+0|code|mime = require('mime')
+0|code|{extractOptsAndCallback} = require('extract-opts')
+0|empty|
+0|comment|# Optional
+0|code|CSON = null
+0|code|YAML = null
+0|empty|
+0|comment|# Local
+0|code|FileModel = require('./file')
+0|empty|
+0|empty|
+0|comment|# ---------------------------------
+0|comment|# Document Model
+0|empty|
+0|class|class DocumentModel extends FileModel
+0|empty|
+1|comment|	# ---------------------------------
+1|comment|	# Properties
+0|empty|
+1|comment|	# Model Class
+1|prop|	klass: DocumentModel
+0|empty|
+1|comment|	# Model Type
+1|string|	type: 'document'
+0|empty|
+0|empty|
+1|comment|	# ---------------------------------
+1|comment|	# Attributes
+0|empty|
+1|prop|	defaults: extendr.extend({}, FileModel::defaults, {
+0|empty|
+2|comment|		# ---------------------------------
+2|comment|		# Special variables
+0|empty|
+2|comment|		# outExtension
+2|comment|		# The final extension used for our file
+2|comment|		# Takes into accounts layouts
+2|comment|		# "layout.html", "post.md.eco" -> "html"
+2|comment|		# already defined in file.coffee
+0|empty|
+2|comment|		# Whether or not we reference other doucments
+2|prop|		referencesOthers: false
+0|empty|
+0|empty|
+2|comment|		# ---------------------------------
+2|comment|		# Content variables
+0|empty|
+2|comment|		# The file meta data (header) in string format before it has been parsed
+2|prop|		header: null
+0|empty|
+2|comment|		# The parser to use for the file's meta data (header)
+2|prop|		parser: null
+0|empty|
+2|comment|		# The file content (body) before rendering, excludes the meta data (header)
+2|prop|		body: null
+0|empty|
+2|comment|		# Have we been rendered yet?
+2|prop|		rendered: false
+0|empty|
+2|comment|		# The rendered content (after it has been wrapped in the layouts)
+2|prop|		contentRendered: null
+0|empty|
+2|comment|		# The rendered content (before being passed through the layouts)
+2|prop|		contentRenderedWithoutLayouts: null
+0|empty|
+0|empty|
+2|comment|		# ---------------------------------
+2|comment|		# User set variables
+0|empty|
+2|comment|		# Whether or not we should render this file
+2|prop|		render: true
+0|empty|
+2|comment|		# Whether or not we want to render single extensions
+2|prop|		renderSingleExtensions: false
+1|code|	})
+0|empty|
+0|empty|
+1|comment|	# ---------------------------------
+1|comment|	# Helpers
+0|empty|
+1|comment|	# Get Out Content
+1|method|	getOutContent: ->
+2|code|		content = @get('contentRendered') or @getContent()
+2|code|		return content
+0|empty|
+1|comment|	# References Others
+1|method|	referencesOthers: (flag) ->
+2|code|		flag ?= true
+2|code|		@set({referencesOthers:flag})
+2|code|		@
+0|empty|
+0|empty|
+1|comment|	# ---------------------------------
+1|comment|	# Actions
+0|empty|
+1|comment|	# Parse
+1|comment|	# Parse our buffer and extract some meaningful data from it
+1|comment|	# next(err)
+1|prop|	parse: (opts={},next) ->
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts,next)
+2|code|		buffer = @getBuffer()
+0|empty|
+2|comment|		# Reparse the data and extract the content
+2|comment|		# With the content, fetch the new meta data, header, and body
+2|code|		super opts, =>
+3|code|			# Prepare
+3|code|			meta = @getMeta()
+3|code|			metaDataChanges = {}
+3|code|			parser = header = body = content = null
+0|empty|
+3|code|			# Content
+3|code|			content = @get('content').replace(/\r\n?/gm,'\n')  # normalise line endings for the web, just for convience, if it causes problems we can remove
+0|empty|
+3|code|			# Header
+3|code|			regex = ///
+4|code|				# allow some space
+4|code|				^\s*
+0|empty|
+4|code|				# allow potential comment characters in seperator
+4|code|				[^\n]*?
+0|empty|
+4|code|				# discover our seperator characters
+4|code|				(
+5|code|					([^\s\d\w])  #\2
+5|code|					\2{2,}  # match the above (the first character of our seperator), 2 or more times
+4|code|				) #\1
+0|empty|
+4|code|				# discover our parser (optional)
+4|code|				(?:
+5|code|					\x20*  # allow zero or more space characters, see https://github.com/jashkenas/coffee-script/issues/2668
+5|code|					(
+5|code|						[a-z]+  # parser must be lowercase alpha
+5|code|					)  #\3
+4|code|				)?
+0|empty|
+4|code|				# discover our meta content
+4|code|				(
+5|code|					[\s\S]*?  # match anything/everything lazily
+4|code|				) #\4
+0|empty|
+4|code|				# allow potential comment characters in seperator
+4|code|				[^\n]*?
+0|empty|
+4|code|				# match our seperator (the first group) exactly
+4|code|				\1
+0|empty|
+4|code|				# allow potential comment characters in seperator
+4|code|				[^\n]*
+4|code|				///
+0|empty|
+3|code|			# Extract Meta Data
+3|code|			match = regex.exec(content)
+3|code|			if match
+4|code|				# TODO: Wipe the old meta data
+0|empty|
+4|code|				# Prepare
+4|code|				seperator = match[1]
+4|code|				parser = match[3] or 'yaml'
+4|code|				header = match[4].trim()
+4|code|				body = content.substring(match[0].length).trim()
+0|empty|
+4|code|				# Parse
+4|code|				try
+5|code|					switch parser
+5|code|						when 'cson', 'coffee', 'coffeescript', 'coffee-script', 'json'
+5|code|							CSON = require('cson')  unless CSON
+5|code|							metaParseResult = CSON.parseSync(header)
+5|code|							extendr.extend(metaDataChanges, metaParseResult)
+0|empty|
+5|code|						when 'yaml'
+5|code|							YAML = require('yamljs')  unless YAML
+5|code|							metaParseResult = YAML.parse(
+5|code|								header.replace(/\t/g,'    ')  # YAML doesn't support tabs that well
+5|code|							)
+5|code|							extendr.extend(metaDataChanges, metaParseResult)
+0|empty|
+5|code|						else
+5|code|							err = new Error("Unknown meta parser: #{parser}")
+5|code|							return next(err)
+4|code|				catch err
+5|code|					return next(err)
+3|code|			else
+4|code|				body = content
+0|empty|
+3|code|			# Incorrect encoding detection?
+3|code|			# If so, re-parse with the correct encoding conversion
+3|code|			if metaDataChanges.encoding and metaDataChanges.encoding isnt @get('encoding')
+4|code|				@set({encoding:metaDataChanges.encoding})
+4|code|				opts.reencode = true
+4|code|				return @parse(opts, next)
+0|empty|
+3|code|			# Update meta data
+3|code|			body = body.replace(/^\n+/,'')
+3|code|			@set(
+4|code|				source: content
+4|code|				content: body
+4|code|				header: header
+4|code|				body: body
+4|code|				parser: parser
+4|code|				name: @get('name') or @get('title') or @get('basename')
+3|code|			)
+0|empty|
+3|code|			# Correct data format
+3|code|			metaDataChanges.date = new Date(metaDataChanges.date)   if metaDataChanges.date
+0|empty|
+3|code|			# Correct ignore
+3|code|			for key in ['ignore','skip','draft']
+4|code|				if metaDataChanges[key]?
+5|code|					metaDataChanges.ignored = (metaDataChanges[key] ? false)
+5|code|					delete metaDataChanges[key]
+3|code|			for key in ['published']
+4|code|				if metaDataChanges[key]?
+5|code|					metaDataChanges.ignored = !(metaDataChanges[key] ? false)
+5|code|					delete metaDataChanges[key]
+0|empty|
+3|code|			# Handle urls
+3|code|			@addUrl(metaDataChanges.urls)  if metaDataChanges.urls
+3|code|			@setUrl(metaDataChanges.url)   if metaDataChanges.url
+0|empty|
+3|code|			# Check if the id was being over-written
+3|code|			if metaDataChanges.id?
+4|code|				@log 'warn', """
+5|code|					The document #{@getFilePath()} tried to over-write its `id` attribute with its meta-data.
+5|code|					This will cause unexpected issues. We have ignored the `id` attribute changes to prevent further errors.
+5|code|					We recommend you rename the `id` meta-data attribute on this document to something else.
+5|code|					For more information, see: https://github.com/bevry/docpad/issues/742
+5|code|					"""
+4|code|				delete metaDataChanges.id
+0|empty|
+3|code|			# Apply meta data
+3|code|			@setMeta(metaDataChanges)
+0|empty|
+3|code|			# Next
+3|code|			return next()
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Normalize data
+1|comment|	# Normalize any parsing we have done, as if a value has updates it may have consequences on another value. This will ensure everything is okay.
+1|comment|	# next(err)
+1|prop|	normalize: (opts={},next) ->
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts,next)
+2|code|		changes = {}
+2|code|		meta = @getMeta()
+0|empty|
+2|comment|		# Extract
+2|code|		outExtension = opts.outExtension or meta.get('outExtension') or null
+2|code|		filename = opts.filename or @get('filename') or null
+2|code|		extensions = @getExtensions({filename}) or null
+0|empty|
+2|comment|		# Extension Rendered
+2|code|		if !outExtension
+3|code|			changes.outExtension = outExtension = extensions[0] or null
+0|empty|
+2|comment|		# Forward
+2|code|		super(extendr.extend(opts, changes), next)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Contextualize data
+1|comment|	# Put our data into perspective of the bigger picture. For instance, generate the url for it's rendered equivalant.
+1|comment|	# next(err)
+1|prop|	contextualize: (opts={},next) ->
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts,next)
+0|empty|
+2|comment|		# Get our highest ancestor
+2|code|		@getEve (err,eve) =>
+3|code|			# Prepare
+3|code|			return next(err)  if err
+3|code|			changes = {}
+3|code|			meta = @getMeta()
+0|empty|
+3|code|			# User specified
+3|code|			outFilename = opts.outFilename or meta.get('outFilename') or null
+3|code|			outPath = opts.outPath or meta.get('outPath') or null
+3|code|			outExtension = opts.outExtension or meta.get('outExtension') or null
+3|code|			extensions = @getExtensions({filename:outFilename}) or null
+0|empty|
+3|code|			# outExtension
+3|code|			if !outExtension
+4|code|				if !outFilename and !outPath
+5|code|					if eve?
+5|code|						changes.outExtension = outExtension = eve.get('outExtension') or extensions[0] or null
+5|code|					else
+5|code|						changes.outExtension = extensions[0] or null
+0|empty|
+3|code|			# Forward onto normalize to adjust for the outExtension change
+3|code|			return @normalize(extendr.extend(opts, changes), next)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+0|empty|
+1|comment|	# ---------------------------------
+1|comment|	# Layouts
+0|empty|
+1|comment|	# Has Layout
+1|comment|	# Checks if the file has a layout
+1|method|	hasLayout: ->
+2|code|		return @get('layout')?
+0|empty|
+1|comment|	# Get Layout
+1|comment|	# The layout object that this file references (if any)
+1|comment|	# We update the layoutRelativePath as it is used for finding what documents are used by a layout for when a layout changes
+1|comment|	# next(err, layout)
+1|method|	getLayout: (next) ->
+2|comment|		# Prepare
+2|code|		file = @
+2|code|		layoutSelector = @get('layout')
+0|empty|
+2|comment|		# Check
+2|code|		return next(null, null)  unless layoutSelector
+0|empty|
+2|comment|		# Find parent
+2|code|		@emit 'getLayout', {selector:layoutSelector}, (err,opts) ->
+3|code|			# Prepare
+3|code|			{layout} = opts
+0|empty|
+3|code|			# Error
+3|code|			if err
+4|code|				file.set('layoutRelativePath': null)
+4|code|				return next(err)
+0|empty|
+3|code|			# Not Found
+3|code|			else unless layout
+4|code|				file.set('layoutRelativePath': null)
+4|code|				return next()
+0|empty|
+3|code|			# Found
+3|code|			else
+4|code|				file.set('layoutRelativePath': layout.get('relativePath'))
+4|code|				return next(null, layout)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Get Eve
+1|comment|	# Get the most ancestoral layout we have (the very top one)
+1|comment|	# next(err,layout)
+1|method|	getEve: (next) ->
+2|code|		if @hasLayout()
+3|code|			@getLayout (err,layout) ->
+4|code|				if err
+5|code|					return next(err, null)
+4|code|				else if layout
+5|code|					layout.getEve(next)
+4|code|				else
+5|code|					next(null, null)
+2|code|		else
+3|code|			next(null, @)
+2|code|		@
+0|empty|
+0|empty|
+1|comment|	# ---------------------------------
+1|comment|	# Rendering
+0|empty|
+1|comment|	# Render extensions
+1|comment|	# next(err,result)
+1|prop|	renderExtensions: (opts,next) ->
+2|comment|		# Prepare
+2|code|		file = @
+2|code|		[opts,next] = extractOptsAndCallback(opts, next)
+2|code|		{content,templateData,renderSingleExtensions} = opts
+2|code|		extensions = @get('extensions')
+2|code|		filename = @get('filename')
+2|code|		filePath = @getFilePath()
+2|code|		content ?= @get('body')
+2|code|		templateData ?= {}
+2|code|		renderSingleExtensions ?= @get('renderSingleExtensions')
+0|empty|
+2|comment|		# Prepare result
+2|code|		result = content
+0|empty|
+2|comment|		# Prepare extensions
+2|code|		extensionsReversed = []
+2|code|		if extensions.length is 0 and filename
+3|code|			extensionsReversed.push(filename)
+2|code|		for extension in extensions
+3|code|			extensionsReversed.unshift(extension)
+0|empty|
+2|comment|		# If we want to allow rendering of single extensions, then add null to the extension list
+2|code|		if renderSingleExtensions and extensionsReversed.length is 1
+3|code|			if renderSingleExtensions isnt 'auto' or filename.replace(/^\./,'') is extensionsReversed[0]
+4|code|				extensionsReversed.push(null)
+0|empty|
+2|comment|		# If we only have one extension, then skip ahead to rendering layouts
+2|code|		return next(null, result)  if extensionsReversed.length <= 1
+0|empty|
+2|comment|		# Prepare the tasks
+2|code|		tasks = new TaskGroup "renderExtensions: #{filePath}", next:(err) ->
+3|code|			# Forward with result
+3|code|			return next(err, result)
+0|empty|
+2|comment|		# Cycle through all the extension groups and render them
+2|code|		eachr extensionsReversed[1..], (extension,index) ->
+3|code|			# Task
+3|code|			tasks.addTask "renderExtension: #{filePath} [#{extensionsReversed[index]} => #{extension}]", (complete) ->
+4|code|				# Prepare
+4|code|				# eventData must be defined in the task
+4|code|				# definining it in the above loop will cause eventData to persist between the tasks... very strange, but it happens
+4|code|				# will cause the jade tests to fail
+4|code|				eventData =
+5|code|					inExtension: extensionsReversed[index]
+5|code|					outExtension: extension
+5|code|					templateData: templateData
+5|code|					file: file
+5|code|					content: result
+0|empty|
+4|code|				# Render
+4|code|				file.trigger 'render', eventData, (err) ->
+5|code|					# Check
+5|code|					return complete(err)  if err
+0|empty|
+5|code|					# Check if the render did anything
+5|code|					# and only check if we actually have content to render!
+5|code|					# if this check fails, error with a suggestion
+5|code|					if result and (result is eventData.content)
+5|code|						message = "\n  Rendering the extension \"#{eventData.inExtension}\" to \"#{eventData.outExtension}\" on \"#{file.attributes.relativePath}\" didn't do anything.\n  Explanation here: http://docpad.org/extension-not-rendering"
+5|code|						file.log('warn', message)
+5|code|						return complete()
+0|empty|
+5|code|					# The render did something, so apply and continue
+5|code|					result = eventData.content
+5|code|					return complete()
+0|empty|
+2|comment|		# Run tasks synchronously
+2|code|		tasks.run()
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+0|empty|
+1|comment|	# Render Document
+1|comment|	# next(err,result)
+1|prop|	renderDocument: (opts,next) ->
+2|comment|		# Prepare
+2|code|		file = @
+2|code|		[opts,next] = extractOptsAndCallback(opts, next)
+2|code|		{content,templateData} = opts
+2|code|		extension = @get('extensions')[0]
+2|code|		content ?= @get('body')
+2|code|		templateData ?= {}
+0|empty|
+2|comment|		# Prepare event data
+2|code|		eventData = {extension,templateData,file,content}
+0|empty|
+2|comment|		# Render via plugins
+2|code|		file.trigger 'renderDocument', eventData, (err) ->
+3|code|			# Forward
+3|code|			return next(err, eventData.content)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+0|empty|
+1|comment|	# Render Layouts
+1|comment|	# next(err,result)
+1|prop|	renderLayouts: (opts,next) ->
+2|comment|		# Prepare
+2|code|		file = @
+2|code|		[opts,next] = extractOptsAndCallback(opts, next)
+2|code|		{content,templateData} = opts
+2|code|		content ?= @get('body')
+2|code|		templateData ?= {}
+0|empty|
+2|comment|		# Grab the layout
+2|code|		file.getLayout (err, layout) ->
+3|code|			# Check
+3|code|			return next(err, content)  if err
+0|empty|
+3|code|			# We have a layout to render
+3|code|			if layout
+4|code|				# Assign the current rendering to the templateData.content
+4|code|				templateData.content = content
+0|empty|
+4|code|				# Merge in the layout meta data into the document JSON
+4|code|				# and make the result available via documentMerged
+4|code|				# templateData.document.metaMerged = extendr.extend({}, layout.getMeta().toJSON(), file.getMeta().toJSON())
+0|empty|
+4|code|				# Render the layout with the templateData
+4|code|				layout.clone().action 'render', {templateData}, (err,result) ->
+5|code|					return next(err, result)
+0|empty|
+3|code|			# We had a layout, but it is missing
+3|code|			else if file.hasLayout()
+5|code|					err = new Error("Could not find the specified layout: #{layoutSelector}")
+5|code|					return next(err, content)
+0|empty|
+3|code|			# We never had a layout
+3|code|			else
+4|code|				return next(null, content)
+0|empty|
+0|empty|
+1|comment|	# Render
+1|comment|	# Render this file
+1|comment|	# next(err,result,document)
+1|prop|	render: (opts={},next) ->
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts, next)
+2|code|		file = @
+0|empty|
+2|comment|		# Prepare variables
+2|code|		contentRenderedWithoutLayouts = null
+2|code|		relativePath = file.get('relativePath')
+0|empty|
+2|comment|		# Options
+2|code|		opts = extendr.clone(opts or {})
+2|code|		opts.actions ?= ['renderExtensions', 'renderDocument', 'renderLayouts']
+2|code|		if opts.apply?
+3|code|			err = new Error("The `apply` option when rendering documents is now deprecated. Use `document.clone().action('render', ...)` instead")
+3|code|			return next(err)
+0|empty|
+2|comment|		# Prepare content
+2|code|		opts.content ?= file.get('body')
+0|empty|
+2|comment|		# Prepare templateData
+2|code|		opts.templateData = extendr.clone(opts.templateData or {})  # deepClone may be more suitable
+2|code|		opts.templateData.document ?= file.toJSON()
+2|code|		opts.templateData.documentModel ?= file
+0|empty|
+2|comment|		# Ensure template helpers are bound correctly
+2|code|		for own key, value of opts.templateData
+3|code|			if value?.bind is Function::bind  # we do this style of check, as underscore is a function that has it's own bind
+4|code|				opts.templateData[key] = value.bind(opts.templateData)
+0|empty|
+2|comment|		# Prepare result
+2|comment|		# file.set({contentRendered:null, contentRenderedWithoutLayouts:null, rendered:false})
+0|empty|
+2|comment|		# Log
+2|code|		file.log 'debug', "Rendering the file: #{relativePath}"
+0|empty|
+2|comment|		# Prepare the tasks
+2|code|		tasks = new TaskGroup "render tasks for: #{relativePath}", next:(err) ->
+3|code|			# Error?
+3|code|			if err
+4|code|				file.log 'warn', "Something went wrong while rendering: #{relativePath}\n#{err.stack or err.message or err}"
+4|code|				return next(err, opts.content, file)
+0|empty|
+3|code|			# Attributes
+3|code|			contentRendered = opts.content
+3|code|			contentRenderedWithoutLayouts ?= contentRendered
+3|code|			rendered = true
+3|code|			file.set({contentRendered, contentRenderedWithoutLayouts, rendered})
+0|empty|
+3|code|			# Log
+3|code|			file.log 'debug', "Rendering completed for: #{relativePath}"
+0|empty|
+3|code|			# Apply
+3|code|			file.attributes.rtime = new Date()
+0|empty|
+3|code|			# Success
+3|code|			return next(null, opts.content, file)
+3|code|			# ^ do not use super here, even with =>
+3|code|			# as it causes layout rendering to fail
+3|code|			# the reasoning for this is that super uses the document's contentRendered
+3|code|			# where, with layouts, opts.apply is false
+3|code|			# so that isn't set
+0|empty|
+2|comment|		# Render Extensions Task
+2|code|		if 'renderExtensions' in opts.actions
+3|code|			tasks.addTask "renderExtensions: #{relativePath}", (complete) ->
+4|code|				file.renderExtensions opts, (err,result) ->
+5|code|					# Check
+5|code|					return complete(err)  if err
+0|empty|
+5|code|					# Apply the result
+5|code|					opts.content = result
+0|empty|
+5|code|					# Done
+5|code|					return complete()
+0|empty|
+2|comment|		# Render Document Task
+2|code|		if 'renderDocument' in opts.actions
+3|code|			tasks.addTask "renderDocument: #{relativePath}", (complete) ->
+4|code|				file.renderDocument opts, (err,result) ->
+5|code|					# Check
+5|code|					return complete(err)  if err
+0|empty|
+5|code|					# Apply the result
+5|code|					opts.content = result
+5|code|					contentRenderedWithoutLayouts = result
+0|empty|
+5|code|					# Done
+5|code|					return complete()
+0|empty|
+2|comment|		# Render Layouts Task
+2|code|		if 'renderLayouts' in opts.actions
+3|code|			tasks.addTask "renderLayouts: #{relativePath}", (complete) ->
+4|code|				file.renderLayouts opts, (err,result) ->
+5|code|					# Check
+5|code|					return complete(err)  if err
+0|empty|
+5|code|					# Apply the result
+5|code|					opts.content = result
+0|empty|
+5|code|					# Done
+5|code|					return complete()
+0|empty|
+2|comment|		# Fire the tasks
+2|code|		tasks.run()
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+0|empty|
+1|comment|	# ---------------------------------
+1|comment|	# CRUD
+0|empty|
+1|comment|	# Write the file
+1|comment|	# next(err)
+1|prop|	writeSource: (opts,next) ->
+2|comment|		# Prepare
+2|code|		[opts,next] = extractOptsAndCallback(opts, next)
+2|code|		file = @
+0|empty|
+2|comment|		# Fetch
+2|code|		opts.content ?= (@getContent() or '').toString('')
+0|empty|
+2|comment|		# Adjust
+2|code|		CSON      = require('cson')  unless CSON
+2|code|		metaData  = @getMeta().toJSON(true)
+2|code|		delete metaData.writeSource
+2|code|		content   = body = opts.content.replace(/^\s+/,'')
+2|code|		header    = CSON.stringifySync(metaData)
+2|code|		if !header or header is '{}'
+3|code|			# No meta data
+3|code|			source    = body
+2|code|		else
+3|code|			# Has meta data
+3|code|			parser    = 'cson'
+3|code|			seperator = '###'
+3|code|			source    = "#{seperator} #{parser}\n#{header}\n#{seperator}\n\n#{body}"
+0|empty|
+2|comment|		# Apply
+2|comment|		# @set({parser,header,body,content,source})
+2|comment|		# ^ commented out as we probably don't need to do this, it could be handled on the next load
+2|code|		opts.content = source
+0|empty|
+2|comment|		# Write data
+2|code|		super(opts, next)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+0|empty|
+0|comment|# Export
+0|module|module.exports = DocumentModel

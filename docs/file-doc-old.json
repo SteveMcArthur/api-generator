@@ -1,0 +1,741 @@
+{
+	"text" : "Docpad Lib",
+	"id" : "root",
+	"children" : [{
+			"id" : 5,
+			"text" : "FileModel",
+			"typ" : "class",
+			"icon" : "class",
+			"code" : ["", ""],
+			"children" : [{
+					"id" : "H30",
+					"text" : "klass",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" ---------------------------------", " Properties", " Model Class"]
+				}, {
+					"id" : "H31",
+					"text" : "type",
+					"typ" : "string",
+					"icon" : "string",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" Model Type"]
+				}, {
+					"id" : "H32",
+					"text" : "rootOutDirPath",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" The out directory path to put the relative path"]
+				}, {
+					"id" : "H33",
+					"text" : "detectEncoding",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" Whether or not we should detect encoding"]
+				}, {
+					"id" : "H34",
+					"text" : "stat",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" Stat Object"]
+				}, {
+					"id" : "H35",
+					"text" : "buffer",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" File buffer"]
+				}, {
+					"id" : "H36",
+					"text" : "bufferTime",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" Buffer time"]
+				}, {
+					"id" : "H37",
+					"text" : "meta",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" The parsed file meta data (header)", " Is a Backbone.Model instance"]
+				}, {
+					"id" : "H38",
+					"text" : "getOptions",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["return {@detectEncoding, @rootOutDirPath, @stat, @buffer, @meta}", ""],
+					"children" : [],
+					"comments" : [" Get Options"]
+				}, {
+					"id" : "H39",
+					"text" : "isOption",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["names = ['detectEncoding', 'rootOutDirPath', 'stat', 'data', 'buffer', 'meta']", "result = key in names", "return result", ""],
+					"children" : [],
+					"comments" : [" Is Option"]
+				}, {
+					"id" : "H40",
+					"text" : "extractOptions",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["result = {}", "", "for own key,value of attrs", "if @isOption(key)", "result[key] = value", "delete attrs[key]", "", "return result", ""],
+					"children" : [],
+					"comments" : [" Extract Options"]
+				}, {
+					"id" : "H41",
+					"text" : "setOptions",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["if attrs.detectEncoding?", "@rootOutDirPath = attrs.detectEncoding", "delete @attributes.detectEncoding", "", "if attrs.rootOutDirPath?", "@rootOutDirPath = attrs.rootOutDirPath", "delete @attributes.rootOutDirPath", "", "if attrs.stat?", "@setStat(attrs.stat)", "delete @attributes.stat", "", "if attrs.data?", "@setBuffer(attrs.data)", "delete @attributes.data", "", "if attrs.buffer?", "@setBuffer(attrs.buffer)", "delete @attributes.buffer", "", "if attrs.meta?", "@setMeta(attrs.meta)", "delete @attributes.meta", "", "@", ""],
+					"children" : [],
+					"comments" : [" Prepare", " Extract", " Return", " Set Options"]
+				}, {
+					"id" : "H42",
+					"text" : "clone",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["attrs = @getAttributes()", "opts = @getOptions()", "", "delete attrs.id", "", "clonedModel = new @klass(attrs, opts)", "", "@emit('clone', clonedModel)", "", "return clonedModel", "", "", ""],
+					"children" : [],
+					"comments" : [" Root Out Path", " Root Out Path", " Stat", " Data", " Buffer", " Meta", " Chain", " Clone"]
+				}, {
+					"id" : "H43",
+					"text" : "defaults",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : ["", ""],
+					"children" : [],
+					"comments" : [" Fetch", " Clean up", " Clone", " Emit clone event so parent can re-attach listeners", " Return", " ---------------------------------", " Attributes"]
+				}, {
+					"id" : "H44",
+					"text" : "id",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" ---------------------------------", " Automaticly set variables", " The unique document identifier"]
+				}, {
+					"id" : "H45",
+					"text" : "basename",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" The file's name without the extension"]
+				}, {
+					"id" : "H46",
+					"text" : "outBasename",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" The out file's name without the extension"]
+				}, {
+					"id" : "H47",
+					"text" : "extension",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" The file's last extension", " \"hello.md.eco\" -> \"eco\""]
+				}, {
+					"id" : "H48",
+					"text" : "outExtension",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" The extension used for our output file"]
+				}, {
+					"id" : "H49",
+					"text" : "extensions",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" The file's extensions as an array", " \"hello.md.eco\" -> [\"md\",\"eco\"]"]
+				}, {
+					"id" : "H50",
+					"text" : "filename",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" The file's name with the extension"]
+				}, {
+					"id" : "H51",
+					"text" : "fullPath",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" The full path of our source file, only necessary if called by @load"]
+				}, {
+					"id" : "H52",
+					"text" : "fullDirPath",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" The full directory path of our source file"]
+				}, {
+					"id" : "H53",
+					"text" : "outPath",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" The output path of our file"]
+				}, {
+					"id" : "H54",
+					"text" : "outDirPath",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" The output path of our file's directory"]
+				}, {
+					"id" : "H55",
+					"text" : "outFilename",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" The file's name with the rendered extension"]
+				}, {
+					"id" : "H56",
+					"text" : "relativePath",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" The relative path of our source file (with extensions)"]
+				}, {
+					"id" : "H57",
+					"text" : "relativeOutPath",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" The relative output path of our file"]
+				}, {
+					"id" : "H58",
+					"text" : "relativeDirPath",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" The relative directory path of our source file"]
+				}, {
+					"id" : "H59",
+					"text" : "relativeOutDirPath",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" The relative output path of our file's directory"]
+				}, {
+					"id" : "H60",
+					"text" : "relativeBase",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" The relative base of our source file (no extension)"]
+				}, {
+					"id" : "H61",
+					"text" : "relativeOutBase",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" The relative base of our out file (no extension)"]
+				}, {
+					"id" : "H62",
+					"text" : "contentType",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" The MIME content-type for the source file"]
+				}, {
+					"id" : "H63",
+					"text" : "outContentType",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" The MIME content-type for the out file"]
+				}, {
+					"id" : "H64",
+					"text" : "ctime",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" The date object for when this document was created"]
+				}, {
+					"id" : "H65",
+					"text" : "mtime",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" The date object for when this document was last modified"]
+				}, {
+					"id" : "H66",
+					"text" : "rtime",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" The date object for when this document was last rendered"]
+				}, {
+					"id" : "H67",
+					"text" : "wtime",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" The date object for when this document was last written"]
+				}, {
+					"id" : "H68",
+					"text" : "exists",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : ["", "", ""],
+					"children" : [],
+					"comments" : [" Does the file actually exist on the file system"]
+				}, {
+					"id" : "H69",
+					"text" : "encoding",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" ---------------------------------", " Content variables", " The encoding of the file"]
+				}, {
+					"id" : "H70",
+					"text" : "source",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" The raw contents of the file, stored as a String"]
+				}, {
+					"id" : "H71",
+					"text" : "content",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : ["", "", ""],
+					"children" : [],
+					"comments" : [" The contents of the file, stored as a String"]
+				}, {
+					"id" : "H72",
+					"text" : "tags",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" ---------------------------------", " User set variables", " The tags for this document"]
+				}, {
+					"id" : "H73",
+					"text" : "render",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" Whether or not we should render this file"]
+				}, {
+					"id" : "H74",
+					"text" : "write",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" Whether or not we should write this file to the output directory"]
+				}, {
+					"id" : "H75",
+					"text" : "writeSource",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" Whether or not we should write this file to the source directory"]
+				}, {
+					"id" : "H76",
+					"text" : "dynamic",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" Whether or not this file should be re-rendered on each request"]
+				}, {
+					"id" : "H77",
+					"text" : "title",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" The title for this document", " Useful for page headings"]
+				}, {
+					"id" : "H78",
+					"text" : "name",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" The name for this document, defaults to the outFilename", " Useful for navigation listings"]
+				}, {
+					"id" : "H79",
+					"text" : "date",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" The date object for this document, defaults to mtime"]
+				}, {
+					"id" : "H80",
+					"text" : "slug",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" The generated slug (url safe seo title) for this document"]
+				}, {
+					"id" : "H81",
+					"text" : "url",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" The url for this document"]
+				}, {
+					"id" : "H82",
+					"text" : "urls",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" Alternative urls for this document"]
+				}, {
+					"id" : "H83",
+					"text" : "ignored",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" Whether or not we ignore this file"]
+				}, {
+					"id" : "H84",
+					"text" : "standalone",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : ["", "", "", ""],
+					"children" : [],
+					"comments" : [" Whether or not we should treat this file as standalone (that nothing depends on it)"]
+				}, {
+					"id" : "H85",
+					"text" : "setBuffer",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["buffer = new Buffer(buffer)  unless Buffer.isBuffer(buffer)", "@bufferTime = @get('mtime') or new Date()", "@buffer = buffer", "@", ""],
+					"children" : [],
+					"comments" : [" ---------------------------------", " Helpers", " Set Buffer"]
+				}, {
+					"id" : "H86",
+					"text" : "getBuffer",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["return @buffer", ""],
+					"children" : [],
+					"comments" : [" Get Buffer"]
+				}, {
+					"id" : "H87",
+					"text" : "isBufferOutdated",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["return @buffer? is false or @bufferTime < (@get('mtime') or new Date())", ""],
+					"children" : [],
+					"comments" : [" Is Buffer Outdated", " True if there is no buffer OR the buffer time is outdated"]
+				}, {
+					"id" : "H88",
+					"text" : "setStat",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["@stat = stat", "@set(", "ctime: new Date(stat.ctime)", "mtime: new Date(stat.mtime)", ")", "@", ""],
+					"children" : [],
+					"comments" : [" Set Stat"]
+				}, {
+					"id" : "H89",
+					"text" : "getStat",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["return @stat", ""],
+					"children" : [],
+					"comments" : [" Get Stat"]
+				}, {
+					"id" : "H90",
+					"text" : "getAttributes",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["attrs = @toJSON(dereference)", "delete attrs.id", "return attrs", ""],
+					"children" : [],
+					"comments" : [" Get Attributes"]
+				}, {
+					"id" : "H91",
+					"text" : "toJSON",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["data = super", "data.meta = @getMeta().toJSON()", "data = extendr.dereference(data)  if dereference is true", "return data", ""],
+					"children" : [],
+					"comments" : [" To JSON"]
+				}, {
+					"id" : "H92",
+					"text" : "getMeta",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["@meta = new Model()  if @meta is null", "if args.length", "return @meta.get(args...)", "else", "return @meta", ""],
+					"children" : [],
+					"comments" : [" Get Meta"]
+				}, {
+					"id" : "H93",
+					"text" : "set",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["if typeChecker.isString(attrs)", "newAttrs = {}", "newAttrs[attrs] = opts", "return @set(newAttrs, opts)", "", "attrs = attrs.toJSON?() ? attrs", "", "options = @extractOptions(attrs)", "", "super(attrs, opts)", "", "@setOptions(options, opts)", "", "@", ""],
+					"children" : [],
+					"comments" : [" Set"]
+				}, {
+					"id" : "H94",
+					"text" : "setDefaults",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["attrs = attrs.toJSON?() ? attrs", "", "options = @extractOptions(attrs)", "", "super(attrs, opts)", "", "@setOptions(options, opts)", "", "return @", ""],
+					"children" : [],
+					"comments" : [" Check", " Prepare", " Extract options", " Perform the set", " Apply the options", " Chain", " Set Defaults"]
+				}, {
+					"id" : "H95",
+					"text" : "setMeta",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["attrs = attrs.toJSON?() ? attrs", "", "options = @extractOptions(attrs)", "", "@getMeta().set(attrs, opts)", "@set(attrs, opts)", "", "@setOptions(options, opts)", "", "return @", ""],
+					"children" : [],
+					"comments" : [" Prepare", " Extract options", " Apply", " Apply the options", " Chain", " Set Meta"]
+				}, {
+					"id" : "H96",
+					"text" : "setMetaDefaults",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["attrs = attrs.toJSON?() ? attrs", "", "options = @extractOptions(attrs)", "", "@getMeta().setDefaults(attrs, opts)", "@setDefaults(attrs, opts)", "", "@setOptions(options, opts)", "", "return @", ""],
+					"children" : [],
+					"comments" : [" Prepare", " Extract options", " Apply", " Apply the options", " Chain", " Set Meta Defaults"]
+				}, {
+					"id" : "H97",
+					"text" : "getFilename",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["{fullPath,relativePath,filename} = opts", "", "result = (filename ? @get('filename'))", "if !result", "result = (fullPath ? @get('fullPath')) or (relativePath ? @get('relativePath'))", "result = pathUtil.basename(result)  if result", "result or= null", "", "return result", ""],
+					"children" : [],
+					"comments" : [" Prepare", " Extract options", " Apply", " Apply the options", " Chain", " Get Filename"]
+				}, {
+					"id" : "H98",
+					"text" : "getFilePath",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["{fullPath,relativePath,filename} = opts", "", "result = (fullPath ? @get('fullPath')) or (relativePath ? @get('relativePath')) or (filename ? @get('filename')) or null", "", "return result", ""],
+					"children" : [],
+					"comments" : [" Prepare", " Determine", " REturn", " Get File Path"]
+				}, {
+					"id" : "H99",
+					"text" : "getExtensions",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["extensions or= @get('extensions') or null", "if (extensions or []).length is 0", "filename = @getFilename({filename})", "if filename", "extensions = docpadUtil.getExtensions(filename)", "return extensions or null", ""],
+					"children" : [],
+					"comments" : [" Prepare", " Determine", " Return", " Get Extensions"]
+				}, {
+					"id" : "H100",
+					"text" : "getContent",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["return @get('content') or @getBuffer()", ""],
+					"children" : [],
+					"comments" : [" Get Content"]
+				}, {
+					"id" : "H101",
+					"text" : "getOutContent",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["return @getContent()", ""],
+					"children" : [],
+					"comments" : [" Get Out Content"]
+				}, {
+					"id" : "H102",
+					"text" : "isText",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["return @get('encoding') isnt 'binary'", ""],
+					"children" : [],
+					"comments" : [" Is Text?"]
+				}, {
+					"id" : "H103",
+					"text" : "isBinary",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["return @get('encoding') is 'binary'", ""],
+					"children" : [],
+					"comments" : [" Is Binary?"]
+				}, {
+					"id" : "H104",
+					"text" : "setUrl",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["@addUrl(url)", "@set({url})", "@", ""],
+					"children" : [],
+					"comments" : [" Set the url for the file"]
+				}, {
+					"id" : "H105",
+					"text" : "addUrl",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["if url instanceof Array", "for newUrl in url", "@addUrl(newUrl)", "", "else if url", "found = false", "urls = @get('urls')", "for existingUrl in urls", "if existingUrl is url", "found = true", "break", "urls.push(url)  if not found", "@trigger('change:urls', @, urls, {})", "@trigger('change', @, {})", "", "@", ""],
+					"children" : [],
+					"comments" : [" Add a url", " Allows our file to support multiple urls"]
+				}, {
+					"id" : "H106",
+					"text" : "removeUrl",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["urls = @get('urls')", "for url,index in urls", "if url is userUrl", "urls.splice(index,1)", "break", "@", ""],
+					"children" : [],
+					"comments" : [" Multiple Urls", " Single Url", " Chain", " Remove a url", " Removes a url from our file"]
+				}, {
+					"id" : "H107",
+					"text" : "getPath",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["if /^\\./.test(relativePath)", "relativeDirPath = @get('relativeDirPath')", "path = pathUtil.join(relativeDirPath, relativePath)", "else", "if parentPath", "path = pathUtil.join(parentPath, relativePath)", "else", "path = relativePath", "return path", "", "", ""],
+					"children" : [],
+					"comments" : [" Get a Path", " If the path starts with `.` then we get the path in relation to the document that is calling it", " Otherwise we just return it as normal"]
+				}, {
+					"id" : "H108",
+					"text" : "actionRunnerInstance",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [],
+					"children" : [],
+					"comments" : [" ---------------------------------", " Actions", " The action runner instance bound to docpad"]
+				}, {
+					"id" : "H109",
+					"text" : "getActionRunner",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : [],
+					"children" : []
+				}, {
+					"id" : "H110",
+					"text" : "action",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : [""],
+					"children" : []
+				}, {
+					"id" : "H111",
+					"text" : "initialize",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["file = @", "@attributes ?= {}", "@attributes.extensions ?= []", "@attributes.urls ?= []", "now = new Date()", "@attributes.ctime ?= now", "@attributes.mtime ?= now", "", "@id ?= @attributes.id ?= @cid", "", "@setOptions(opts)", "", "@actionRunnerInstance = new TaskGroup(\"file action runner\").run().on 'complete', (err) ->", "file.emit('error', err)  if err", "", "super", "", "@", ""],
+					"children" : [],
+					"comments" : [" Initialize"]
+				}, {
+					"id" : "H112",
+					"text" : "load",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["[opts,next] = extractOptsAndCallback(opts,next)", "file = @", "opts.exists ?= null", "", "fullPath = @get('fullPath')", "filePath = @getFilePath({fullPath})", "", "file.set(exists: opts.exists)  if opts.exists?", "file.setStat(opts.stat)        if opts.stat?", "file.setBuffer(opts.buffer)    if opts.buffer?", "", "tasks = new TaskGroup(\"load tasks for file: #{filePath}\", {next})", ".on('item.run', (item) ->", "file.log(\"debug\", \"#{item.getConfig().name}: #{file.type}: #{filePath}\")", ")", "", "tasks.addTask \"Detect the file\", (complete) ->", "if fullPath and opts.exists is null", "safefs.exists fullPath, (exists) ->", "opts.exists = exists", "file.set(exists: opts.exists)", "return complete()", "else", "return complete()", "", "tasks.addTask \"Stat the file and cache the result\", (complete) ->", "if fullPath and opts.exists and opts.stat? is false", "return safefs.stat fullPath, (err,fileStat) ->", "return complete(err)  if err", "file.setStat(fileStat)", "return complete()", "else", "return complete()", "", "tasks.addTask \"Read the file and cache the result\", (complete) ->", "if fullPath and opts.exists and opts.buffer? is false and file.isBufferOutdated()", "return safefs.readFile fullPath, (err,buffer) ->", "return complete(err)  if err", "file.setBuffer(buffer)", "return complete()", "else", "return complete()", "", "tasks.addTask \"Load -> Parse\", (complete) ->", "file.parse(complete)", "", "tasks.addTask \"Parse -> Normalize\", (complete) ->", "file.normalize(complete)", "", "tasks.addTask \"Normalize -> Contextualize\", (complete) ->", "file.contextualize(complete)", "", "tasks.run()", "", "@", ""],
+					"children" : [],
+					"comments" : [" Defaults", " Id", " Options", " Create our action runner", " Super", " Chain", " Load", " If the fullPath exists, load the file", " If it doesn't, then parse and normalize the file"]
+				}, {
+					"id" : "H113",
+					"text" : "parse",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["[opts,next] = extractOptsAndCallback(opts, next)", "buffer = @getBuffer()", "relativePath = @get('relativePath')", "encoding = opts.encoding or @get('encoding') or null", "changes = {}", "", "if buffer and encoding? is false or opts.reencode is true", "isText = isTextOrBinary.isTextSync(relativePath, buffer)", "", "if isText is true", "if @detectEncoding", "jschardet ?= require('jschardet')", "encoding ?= jschardet.detect(buffer)?.encoding", "", "encoding or= 'utf8'", "", "if docpadUtil.isStandardEncoding(encoding) is false", "try", "encodingUtil ?= require('encoding')", "catch err", "", "if encodingUtil?", "@log('info', \"Converting encoding #{encoding} to UTF-8 on #{relativePath}\")", "", "d = require('domain').create()", "d.on 'error', =>", "@log('warn', \"Encoding conversion failed, therefore we cannot convert the encoding #{encoding} to UTF-8 on #{relativePath}\")", "d.run ->", "buffer = encodingUtil.convert(buffer, 'utf8', encoding)  # content, to, from", "", "else", "@log('warn', \"Encoding utilities did not load, therefore we cannot convert the encoding #{encoding} to UTF-8 on #{relativePath}\")", "", "changes.encoding = encoding", "", "else", "encoding = changes.encoding = 'binary'", "", "if encoding is 'binary'", "content = source = ''", "", "changes.content = content", "changes.source = source", "", "else", "encoding = changes.encoding = 'utf8'  if encoding? is false", "", "source = buffer?.toString('utf8') or ''", "content = source", "", "changes.content = content", "changes.source = source", "", "@set(changes)", "", "next()", "@", ""],
+					"children" : [],
+					"comments" : [" Prepare", " Fetch", " Apply options", " Tasks", " Detect the file", " Otherwise fetch new stat", " Process the file", " Otherwise fetch new buffer", " Run the tasks", " Chain", " Parse", " Parse our buffer and extract meaningful data from it", " next(err)"]
+				}, {
+					"id" : "H114",
+					"text" : "normalize",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["[opts,next] = extractOptsAndCallback(opts,next)", "changes = {}", "meta = @getMeta()", "", "filename = opts.filename or @get('filename') or null", "relativePath = opts.relativePath or @get('relativePath') or null", "fullPath = opts.fullPath or @get('fullPath') or null", "mtime = opts.mtime or @get('mtime') or null", "", "tags = opts.tags or meta.get('tags') or null", "date = opts.date or meta.get('date') or null", "name = opts.name or meta.get('name') or null", "slug = opts.slug or meta.get('slug') or null", "url = opts.url or meta.get('url') or null", "contentType = opts.contentType or meta.get('contentType') or null", "outContentType = opts.outContentType or meta.get('outContentType') or null", "outFilename = opts.outFilename or meta.get('outFilename') or null", "outExtension = opts.outExtension or meta.get('outExtension') or null", "outPath = opts.outPath or meta.get('outPath') or null", "", "extensions = null", "extension = null", "basename = null", "outBasename = null", "relativeOutPath = null", "relativeDirPath = null", "relativeOutDirPath = null", "relativeBase = null", "relativeOutBase = null", "outDirPath = null", "fullDirPath = null", "", "changes.filename = filename = @getFilename({filename, relativePath, fullPath})", "", "if !filename", "err = new Error('filename is required, it can be specified via filename, fullPath, or relativePath')", "return next(err)", "", "if !relativePath and filename", "changes.relativePath = relativePath = filename", "", "changes.basename = basename = docpadUtil.getBasename(filename)", "", "changes.extensions = extensions = @getExtensions({filename})", "", "changes.extension = extension = docpadUtil.getExtension(extensions)", "", "if fullPath", "changes.fullDirPath = fullDirPath = docpadUtil.getDirPath(fullPath)", "", "changes.relativeDirPath = relativeDirPath = docpadUtil.getDirPath(relativePath)", "", "changes.relativeBase = relativeBase =", "if relativeDirPath", "pathUtil.join(relativeDirPath, basename)", "else", "basename", "", "if !contentType", "changes.contentType = contentType = mime.lookup(fullPath or relativePath)", "", "if tags and typeChecker.isArray(tags) is false", "changes.tags = tags = String(tags).split(/[\\s,]+/)", "", "if !date", "changes.date = date = mtime or @get('date') or new Date()", "", "if !outFilename and !outPath", "changes.outFilename = outFilename = docpadUtil.getOutFilename(basename, outExtension or extensions.join('.'))", "", "if !outPath", "changes.outPath = outPath =", "if @rootOutDirPath", "pathUtil.resolve(@rootOutDirPath, relativeDirPath, outFilename)", "else", "null", "", "if outPath", "changes.outFilename = outFilename = docpadUtil.getFilename(outPath)", "", "changes.outDirPath = outDirPath =", "if outPath", "docpadUtil.getDirPath(outPath)", "else", "null", "", "changes.outBasename = outBasename = docpadUtil.getBasename(outFilename)", "", "changes.outExtension = outExtension = docpadUtil.getExtension(outFilename)", "", "changes.relativeOutPath = relativeOutPath =", "if outPath", "outPath.replace(@rootOutDirPath, '').replace(/^[\\/\\\\]/, '')", "else", "pathUtil.join(relativeDirPath, outFilename)", "", "changes.relativeOutDirPath = relativeOutDirPath = docpadUtil.getDirPath(relativeOutPath)", "", "changes.relativeOutBase = relativeOutBase = pathUtil.join(relativeOutDirPath, outBasename)", "", "if !name", "changes.name = name = outFilename", "", "_defaultUrl = docpadUtil.getUrl(relativeOutPath)", "if url", "@setUrl(url)", "@addUrl(_defaultUrl)", "else", "@setUrl(_defaultUrl)", "", "if !outContentType and contentType", "changes.outContentType = outContentType = mime.lookup(outPath or relativeOutPath) or contentType", "", "if !slug", "changes.slug = slug = docpadUtil.getSlug(relativeOutBase)", "", "changes.wtime = wtime = new Date(wtime)  if typeof wtime is 'string'", "changes.rtime = rtime = new Date(rtime)  if typeof rtime is 'string'", "changes.ctime = ctime = new Date(ctime)  if typeof ctime is 'string'", "changes.mtime = mtime = new Date(mtime)  if typeof mtime is 'string'", "changes.date  = date  = new Date(date)   if typeof date is 'string'", "", "@set(changes)", "", "next()", "@", ""],
+					"children" : [],
+					"comments" : [" Prepare", " Detect Encoding", " Text", " Detect source encoding if not manually specified", " Default the encoding", " Convert into utf8", " Import optional dependencies", "Iconv ?= require('iconv').Iconv", " ^ when we prove encoding/iconv-lite works better than iconv", " we can move this out of the try catch and make detectEncoding standard", " ignore", " Can convert?", " Convert", "buffer = new Iconv(encoding, 'utf8').convert(buffer)", " Can't convert", " Apply", " Binary", " Set", " Binary", " Set", " Apply", " Text", " Default", " Set", " Apply", " Apply", " Next", " Normalize data", " Normalize any parsing we have done, as if a value has updates it may have consequences on another value. This will ensure everything is okay.", " next(err)"]
+				}, {
+					"id" : "H115",
+					"text" : "contextualize",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["[opts,next] = extractOptsAndCallback(opts,next)", "", "next()", "@", "", ""],
+					"children" : [],
+					"comments" : [" Prepare", " App specified", " User specified", " Force specifeid", " filename", " check", " relativePath", " force basename", " force extensions", " force extension", " force fullDirPath", " force relativeDirPath", " force relativeBase", " force contentType", " adjust tags", " force date", " force outFilename", " force outPath", " ^ we still do this set as outPath is a meta, and it may still be set as an attribute", " refresh outFilename", " force outDirPath", " force outBasename", " force outExtension", " force relativeOutPath", " force relativeOutDirPath", " force relativeOutBase", " force name", " force url", " force outContentType", " force slug", " Force date objects", " Apply", " Next", " Contextualize data", " Put our data into perspective of the bigger picture. For instance, generate the url for it's rendered equivalant.", " next(err)"]
+				}, {
+					"id" : "H116",
+					"text" : "render",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["[opts,next] = extractOptsAndCallback(opts, next)", "file = @", "", "file.attributes.rtime = new Date()", "", "next(null, file.getOutContent(), file)", "@", "", "", ""],
+					"children" : [],
+					"comments" : [" Prepare", " Forward", " Render", " Render this file", " next(err,result,document)"]
+				}, {
+					"id" : "H117",
+					"text" : "write",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["[opts,next] = extractOptsAndCallback(opts, next)", "file = @", "", "opts.path      or= file.get('outPath')", "opts.encoding  or= file.get('encoding') or 'utf8'", "opts.content   or= file.getOutContent()", "opts.type      or= 'out file'", "", "unless opts.path", "next()", "return @", "", "unless opts.encoding.toLowerCase() in ['ascii','utf8','utf-8','binary']", "try", "encodingUtil ?= require('encoding')", "catch err", "", "if encodingUtil?", "@log('info', \"Converting encoding UTF-8 to #{opts.encoding} on #{opts.path}\")", "try", "opts.content = encodingUtil.convert(opts.content, opts.encoding, 'utf8')  # content, to, from", "catch err", "@log('warn', \"Encoding conversion failed, therefore we cannot convert the encoding UTF-8 to #{opts.encoding} on #{opts.path}\")", "else", "@log('warn', \"Encoding utilities did not load, therefore we cannot convert the encoding UTF-8 to #{opts.encoding} on #{opts.path}\")", "", "file.log 'debug', \"Writing the #{opts.type}: #{opts.path} #{opts.encoding}\"", "", "safefs.writeFile opts.path, opts.content, (err) ->", "return next(err)  if err", "", "if opts.type is 'out file'", "file.attributes.wtime = new Date()", "", "file.log 'debug', \"Wrote the #{opts.type}: #{opts.path} #{opts.encoding}\"", "", "return next()", "", "@", ""],
+					"children" : [],
+					"comments" : [" Prepare", " Apply", " Forward", " ---------------------------------", " CRUD", " Write the out file", " next(err)"]
+				}, {
+					"id" : "H118",
+					"text" : "writeSource",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["[opts,next] = extractOptsAndCallback(opts, next)", "file = @", "", "opts.path      or= file.get('fullPath')", "opts.content   or= (file.getContent() or '').toString('')", "opts.type      or= 'source file'", "", "@write(opts, next)", "", "@", "", "'delete': (opts,next) ->", "[opts,next] = extractOptsAndCallback(opts, next)", "file = @", "", "opts.path      or= file.get('outPath')", "opts.type      or= 'out file'", "", "unless opts.path", "next()", "return @", "", "file.log 'debug', \"Delete the #{opts.type}: #{opts.path}\"", "", "safefs.exists opts.path, (exists) ->", "return next()  unless exists", "", "safefs.unlink opts.path, (err) ->", "return next(err)  if err", "", "file.log 'debug', \"Deleted the #{opts.type}: #{opts.path}\"", "", "next()", "", "@", ""],
+					"children" : [],
+					"comments" : [" Prepare", " Fetch", " Check", " Sometimes the out path could not be set if we are early on in the process", " Convert utf8 to original encoding", " Import optional dependencies", "Iconv ?= require('iconv').Iconv", " ignore", " Convert", "opts.content = new Iconv('utf8',opts.encoding).convert(opts.content)", " Log", " Write data", " Check", " Update the wtime", " Log", " Next", " Chain", " Write the source file", " next(err)"]
+				}, {
+					"id" : "H119",
+					"text" : "deleteSource",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["[opts,next] = extractOptsAndCallback(opts, next)", "file = @", "", "opts.path      or= file.get('fullPath')", "opts.type      or= 'source file'", "", "@delete(opts, next)", "", "@", ""],
+					"children" : [],
+					"comments" : [" Prepare", " Fetch", " Write data", " Chain", " Delete the out file", " next(err)", " Prepare", " Fetch", " Check", " Sometimes the out path could not be set if we are early on in the process", " Log", " Check existance", " Exit if it doesn't exist", " If it does exist delete it", " Check", " Log", " Next", " Chain", " Delete the source file", " next(err)"]
+				}
+			],
+			"comments" : [" Import: Optional", "Iconv = null", " Local", " ---------------------------------", " File Model"]
+		}, {
+			"id" : "H120",
+			"text" : "FileModel",
+			"typ" : "module",
+			"icon" : "module",
+			"code" : [],
+			"children" : [],
+			"comments" : [" Prepare", " Fetch", " Write data", " Chain", " Export"]
+		}
+	]
+}

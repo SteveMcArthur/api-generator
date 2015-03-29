@@ -1,0 +1,44 @@
+{
+    "text" : "Docpad Lib",
+    "id" : "root",
+    "state" : {
+        "opened" : true
+    },
+    "children" :[{
+                "id" : "B0",
+                "text" : "DocPad",
+                "file" : "docpad-doc.json",
+                "origfile" : "docpad.coffee",
+                "children" : true
+                },{
+                "id" : "C0",
+                "text" : "BasePlugin",
+                "file" : "plugin-doc.json",
+                "origfile" : "plugin.coffee",
+                "children" : true
+                },{
+                "id" : "D0",
+                "text" : "PluginLoader",
+                "file" : "plugin-loader-doc.json",
+                "origfile" : "plugin-loader.coffee",
+                "children" : true
+                },{
+                "id" : "F0",
+                "text" : "docpadUtil",
+                "file" : "util-doc.json",
+                "origfile" : "util.coffee",
+                "children" : true
+				},{
+                "id" : "H0",
+                "text" : "FileModel",
+                "file" : "file-doc.json",
+                "origfile" : "file.coffee",
+                "children" : true
+				},{
+                "id" : "G0",
+                "text" : "DocumentModel",
+                "file" : "document-doc.json",
+                "origfile" : "document.coffee",
+                "children" : true
+                }]
+}

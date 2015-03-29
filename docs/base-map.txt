@@ -1,0 +1,71 @@
+0|comment|# Requires
+0|code|extendr = require('extendr')
+0|code|queryEngine = require('query-engine')
+0|code|Backbone = queryEngine.Backbone
+0|empty|
+0|comment|# Log a message
+0|code|log = (args...) ->
+1|code|	args.unshift('log')
+1|code|	@emit.apply(@, args)
+1|code|	@
+0|code|emit = (args...) ->
+1|code|	@trigger.apply(@, args)
+0|empty|
+0|comment|# Events
+0|class|class Events
+1|prop|	log: log
+1|prop|	emit: emit
+0|empty|
+0|code|extendr.extend(Events::, Backbone.Events)
+0|empty|
+0|comment|# Model
+0|class|class Model extends Backbone.Model
+1|prop|	log: log
+1|prop|	emit: emit
+0|empty|
+1|comment|	# Set Defaults
+1|prop|	setDefaults: (attrs={},opts) ->
+2|comment|		# Extract
+2|code|		set = {}
+2|code|		for own key,value of attrs
+3|code|			set[key] = value  if @get(key) is @defaults?[key]
+0|empty|
+2|comment|		# Forward
+2|code|		return @set(set, opts)
+0|empty|
+0|comment|# Collection
+0|class|class Collection extends Backbone.Collection
+1|prop|	log: log
+1|prop|	emit: emit
+1|method|	destroy: =>
+2|code|		@emit('destroy')
+2|code|		@off().stopListening()
+2|code|		@
+0|prop|Collection::model = Model
+0|prop|Collection::collection = Collection
+0|empty|
+0|comment|# View
+0|class|class View extends Backbone.View
+1|prop|	log: log
+1|prop|	emit: emit
+0|empty|
+0|comment|# QueryCollection
+0|class|class QueryCollection extends queryEngine.QueryCollection
+1|prop|	log: log
+1|prop|	emit: emit
+0|empty|
+1|method|	setParentCollection: ->
+2|code|		super
+2|code|		parentCollection = @getParentCollection()
+2|code|		parentCollection.on('destroy',@destroy)
+2|code|		@
+0|empty|
+1|method|	destroy: =>
+2|code|		@emit('destroy')
+2|code|		@off().stopListening()
+2|code|		@
+0|prop|QueryCollection::model = Model
+0|prop|QueryCollection::collection = QueryCollection
+0|empty|
+0|comment|# Export our base models
+0|module|module.exports = {queryEngine,Backbone,Events,Model,Collection,View,QueryCollection}

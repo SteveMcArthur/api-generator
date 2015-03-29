@@ -1,0 +1,229 @@
+{
+	"children" : [{
+			"id" : "G0",
+			"text" : "",
+			"typ" : "code",
+			"icon" : "code",
+			"code" : ["extendr = require('extendr')", "eachr = require('eachr')", "{TaskGroup} = require('taskgroup')", "mime = require('mime')", "{extractOptsAndCallback} = require('extract-opts')", "", "CSON = null", "YAML = null", "", "FileModel = require('./file')", "", "", ""],
+			"children" : [],
+			"comments" : [" Necessary"]
+		}, {
+			"id" : "G1",
+			"text" : "DocumentModel",
+			"typ" : "class",
+			"icon" : "class",
+			"code" : ["", ""],
+			"children" : [{
+					"id" : "G2",
+					"text" : "klass",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" ---------------------------------", " Properties", " Model Class"]
+				}, {
+					"id" : "G3",
+					"text" : "type",
+					"typ" : "string",
+					"icon" : "string",
+					"code" : ["", "", ""],
+					"children" : [],
+					"comments" : [" Model Type"]
+				}, {
+					"id" : "G4",
+					"text" : "defaults",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : ["", "", ""],
+					"children" : [],
+					"comments" : [" ---------------------------------", " Attributes"]
+				}, {
+					"id" : "G5",
+					"text" : "referencesOthers",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : ["", "", ""],
+					"children" : [],
+					"comments" : [" ---------------------------------", " Special variables", " outExtension", " The final extension used for our file", " Takes into accounts layouts", " \"layout.html\", \"post.md.eco\" -> \"html\"", " already defined in file.coffee", " Whether or not we reference other doucments"]
+				}, {
+					"id" : "G6",
+					"text" : "header",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" ---------------------------------", " Content variables", " The file meta data (header) in string format before it has been parsed"]
+				}, {
+					"id" : "G7",
+					"text" : "parser",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" The parser to use for the file's meta data (header)"]
+				}, {
+					"id" : "G8",
+					"text" : "body",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" The file content (body) before rendering, excludes the meta data (header)"]
+				}, {
+					"id" : "G9",
+					"text" : "rendered",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" Have we been rendered yet?"]
+				}, {
+					"id" : "G10",
+					"text" : "contentRendered",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" The rendered content (after it has been wrapped in the layouts)"]
+				}, {
+					"id" : "G11",
+					"text" : "contentRenderedWithoutLayouts",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : ["", "", ""],
+					"children" : [],
+					"comments" : [" The rendered content (before being passed through the layouts)"]
+				}, {
+					"id" : "G12",
+					"text" : "render",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : [""],
+					"children" : [],
+					"comments" : [" ---------------------------------", " User set variables", " Whether or not we should render this file"]
+				}, {
+					"id" : "G13",
+					"text" : "renderSingleExtensions",
+					"typ" : "object",
+					"icon" : "object",
+					"code" : ["})", "", "", ""],
+					"children" : [],
+					"comments" : [" Whether or not we want to render single extensions"]
+				}, {
+					"id" : "G14",
+					"text" : "getOutContent",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["content = @get('contentRendered') or @getContent()", "return content", ""],
+					"children" : [],
+					"comments" : [" ---------------------------------", " Helpers", " Get Out Content"]
+				}, {
+					"id" : "G15",
+					"text" : "referencesOthers",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["flag ?= true", "@set({referencesOthers:flag})", "@", "", "", ""],
+					"children" : [],
+					"comments" : [" References Others"]
+				}, {
+					"id" : "G16",
+					"text" : "parse",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["[opts,next] = extractOptsAndCallback(opts,next)", "buffer = @getBuffer()", "", "super opts, =>", "meta = @getMeta()", "metaDataChanges = {}", "parser = header = body = content = null", "", "content = @get('content').replace(/\\r\\n?/gm,'\\n')  # normalise line endings for the web, just for convience, if it causes problems we can remove", "", "regex = ///", "^\\s*", "", "[^\\n]*?", "", "(", "([^\\s\\d\\w])  #\\2", "\\2{2,}  # match the above (the first character of our seperator), 2 or more times", ") #\\1", "", "(?:", "\\x20*  # allow zero or more space characters, see https://github.com/jashkenas/coffee-script/issues/2668", "(", "[a-z]+  # parser must be lowercase alpha", ")  #\\3", ")?", "", "(", "[\\s\\S]*?  # match anything/everything lazily", ") #\\4", "", "[^\\n]*?", "", "\\1", "", "[^\\n]*", "///", "", "match = regex.exec(content)", "if match", "", "seperator = match[1]", "parser = match[3] or 'yaml'", "header = match[4].trim()", "body = content.substring(match[0].length).trim()", "", "try", "switch parser", "when 'cson', 'coffee', 'coffeescript', 'coffee-script', 'json'", "CSON = require('cson')  unless CSON", "metaParseResult = CSON.parseSync(header)", "extendr.extend(metaDataChanges, metaParseResult)", "", "when 'yaml'", "YAML = require('yamljs')  unless YAML", "metaParseResult = YAML.parse(", "header.replace(/\\t/g,'    ')  # YAML doesn't support tabs that well", ")", "extendr.extend(metaDataChanges, metaParseResult)", "", "else", "err = new Error(\"Unknown meta parser: #{parser}\")", "return next(err)", "catch err", "return next(err)", "else", "body = content", "", "if metaDataChanges.encoding and metaDataChanges.encoding isnt @get('encoding')", "@set({encoding:metaDataChanges.encoding})", "opts.reencode = true", "return @parse(opts, next)", "", "body = body.replace(/^\\n+/,'')", "@set(", "source: content", "content: body", "header: header", "body: body", "parser: parser", "name: @get('name') or @get('title') or @get('basename')", ")", "", "metaDataChanges.date = new Date(metaDataChanges.date)   if metaDataChanges.date", "", "for key in ['ignore','skip','draft']", "if metaDataChanges[key]?", "metaDataChanges.ignored = (metaDataChanges[key] ? false)", "delete metaDataChanges[key]", "for key in ['published']", "if metaDataChanges[key]?", "metaDataChanges.ignored = !(metaDataChanges[key] ? false)", "delete metaDataChanges[key]", "", "@addUrl(metaDataChanges.urls)  if metaDataChanges.urls", "@setUrl(metaDataChanges.url)   if metaDataChanges.url", "", "if metaDataChanges.id?", "@log 'warn', \"\"\"", "The document #{@getFilePath()} tried to over-write its `id` attribute with its meta-data.", "This will cause unexpected issues. We have ignored the `id` attribute changes to prevent further errors.", "We recommend you rename the `id` meta-data attribute on this document to something else.", "For more information, see: https://github.com/bevry/docpad/issues/742", "\"\"\"", "delete metaDataChanges.id", "", "@setMeta(metaDataChanges)", "", "return next()", "", "@", ""],
+					"children" : [],
+					"comments" : [" ---------------------------------", " Actions", " Parse", " Parse our buffer and extract some meaningful data from it", " next(err)"]
+				}, {
+					"id" : "G17",
+					"text" : "normalize",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["[opts,next] = extractOptsAndCallback(opts,next)", "changes = {}", "meta = @getMeta()", "", "outExtension = opts.outExtension or meta.get('outExtension') or null", "filename = opts.filename or @get('filename') or null", "extensions = @getExtensions({filename}) or null", "", "if !outExtension", "changes.outExtension = outExtension = extensions[0] or null", "", "super(extendr.extend(opts, changes), next)", "", "@", ""],
+					"children" : [],
+					"comments" : [" Prepare", " Reparse the data and extract the content", " With the content, fetch the new meta data, header, and body", " Prepare", " Content", " Header", " allow some space", " allow potential comment characters in seperator", " discover our seperator characters", " discover our parser (optional)", " discover our meta content", " allow potential comment characters in seperator", " match our seperator (the first group) exactly", " allow potential comment characters in seperator", " Extract Meta Data", " TODO: Wipe the old meta data", " Prepare", " Parse", " Incorrect encoding detection?", " If so, re-parse with the correct encoding conversion", " Update meta data", " Correct data format", " Correct ignore", " Handle urls", " Check if the id was being over-written", " Apply meta data", " Next", " Chain", " Normalize data", " Normalize any parsing we have done, as if a value has updates it may have consequences on another value. This will ensure everything is okay.", " next(err)"]
+				}, {
+					"id" : "G18",
+					"text" : "contextualize",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["[opts,next] = extractOptsAndCallback(opts,next)", "", "@getEve (err,eve) =>", "return next(err)  if err", "changes = {}", "meta = @getMeta()", "", "outFilename = opts.outFilename or meta.get('outFilename') or null", "outPath = opts.outPath or meta.get('outPath') or null", "outExtension = opts.outExtension or meta.get('outExtension') or null", "extensions = @getExtensions({filename:outFilename}) or null", "", "if !outExtension", "if !outFilename and !outPath", "if eve?", "changes.outExtension = outExtension = eve.get('outExtension') or extensions[0] or null", "else", "changes.outExtension = extensions[0] or null", "", "return @normalize(extendr.extend(opts, changes), next)", "", "@", "", "", ""],
+					"children" : [],
+					"comments" : [" Prepare", " Extract", " Extension Rendered", " Forward", " Chain", " Contextualize data", " Put our data into perspective of the bigger picture. For instance, generate the url for it's rendered equivalant.", " next(err)"]
+				}, {
+					"id" : "G19",
+					"text" : "hasLayout",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["return @get('layout')?", ""],
+					"children" : [],
+					"comments" : [" Prepare", " Get our highest ancestor", " Prepare", " User specified", " outExtension", " Forward onto normalize to adjust for the outExtension change", " Chain", " ---------------------------------", " Layouts", " Has Layout", " Checks if the file has a layout"]
+				}, {
+					"id" : "G20",
+					"text" : "getLayout",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["file = @", "layoutSelector = @get('layout')", "", "return next(null, null)  unless layoutSelector", "", "@emit 'getLayout', {selector:layoutSelector}, (err,opts) ->", "{layout} = opts", "", "if err", "file.set('layoutRelativePath': null)", "return next(err)", "", "else unless layout", "file.set('layoutRelativePath': null)", "return next()", "", "else", "file.set('layoutRelativePath': layout.get('relativePath'))", "return next(null, layout)", "", "@", ""],
+					"children" : [],
+					"comments" : [" Get Layout", " The layout object that this file references (if any)", " We update the layoutRelativePath as it is used for finding what documents are used by a layout for when a layout changes", " next(err, layout)"]
+				}, {
+					"id" : "G21",
+					"text" : "getEve",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["if @hasLayout()", "@getLayout (err,layout) ->", "if err", "return next(err, null)", "else if layout", "layout.getEve(next)", "else", "next(null, null)", "else", "next(null, @)", "@", "", "", ""],
+					"children" : [],
+					"comments" : [" Prepare", " Check", " Find parent", " Prepare", " Error", " Not Found", " Found", " Chain", " Get Eve", " Get the most ancestoral layout we have (the very top one)", " next(err,layout)"]
+				}, {
+					"id" : "G22",
+					"text" : "renderExtensions",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["file = @", "[opts,next] = extractOptsAndCallback(opts, next)", "{content,templateData,renderSingleExtensions} = opts", "extensions = @get('extensions')", "filename = @get('filename')", "filePath = @getFilePath()", "content ?= @get('body')", "templateData ?= {}", "renderSingleExtensions ?= @get('renderSingleExtensions')", "", "result = content", "", "extensionsReversed = []", "if extensions.length is 0 and filename", "extensionsReversed.push(filename)", "for extension in extensions", "extensionsReversed.unshift(extension)", "", "if renderSingleExtensions and extensionsReversed.length is 1", "if renderSingleExtensions isnt 'auto' or filename.replace(/^\\./,'') is extensionsReversed[0]", "extensionsReversed.push(null)", "", "return next(null, result)  if extensionsReversed.length <= 1", "", "tasks = new TaskGroup \"renderExtensions: #{filePath}\", next:(err) ->", "return next(err, result)", "", "eachr extensionsReversed[1..], (extension,index) ->", "tasks.addTask \"renderExtension: #{filePath} [#{extensionsReversed[index]} => #{extension}]\", (complete) ->", "eventData =", "inExtension: extensionsReversed[index]", "outExtension: extension", "templateData: templateData", "file: file", "content: result", "", "file.trigger 'render', eventData, (err) ->", "return complete(err)  if err", "", "if result and (result is eventData.content)", "message = \"\\n  Rendering the extension \\\"#{eventData.inExtension}\\\" to \\\"#{eventData.outExtension}\\\" on \\\"#{file.attributes.relativePath}\\\" didn't do anything.\\n  Explanation here: http://docpad.org/extension-not-rendering\"", "file.log('warn', message)", "return complete()", "", "result = eventData.content", "return complete()", "", "tasks.run()", "", "@", "", ""],
+					"children" : [],
+					"comments" : [" ---------------------------------", " Rendering", " Render extensions", " next(err,result)"]
+				}, {
+					"id" : "G23",
+					"text" : "renderDocument",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["file = @", "[opts,next] = extractOptsAndCallback(opts, next)", "{content,templateData} = opts", "extension = @get('extensions')[0]", "content ?= @get('body')", "templateData ?= {}", "", "eventData = {extension,templateData,file,content}", "", "file.trigger 'renderDocument', eventData, (err) ->", "return next(err, eventData.content)", "", "@", "", ""],
+					"children" : [],
+					"comments" : [" Prepare", " Prepare result", " Prepare extensions", " If we want to allow rendering of single extensions, then add null to the extension list", " If we only have one extension, then skip ahead to rendering layouts", " Prepare the tasks", " Forward with result", " Cycle through all the extension groups and render them", " Task", " Prepare", " eventData must be defined in the task", " definining it in the above loop will cause eventData to persist between the tasks... very strange, but it happens", " will cause the jade tests to fail", " Render", " Check", " Check if the render did anything", " and only check if we actually have content to render!", " if this check fails, error with a suggestion", " The render did something, so apply and continue", " Run tasks synchronously", " Chain", " Render Document", " next(err,result)"]
+				}, {
+					"id" : "G24",
+					"text" : "renderLayouts",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["file = @", "[opts,next] = extractOptsAndCallback(opts, next)", "{content,templateData} = opts", "content ?= @get('body')", "templateData ?= {}", "", "file.getLayout (err, layout) ->", "return next(err, content)  if err", "", "if layout", "templateData.content = content", "", "", "layout.clone().action 'render', {templateData}, (err,result) ->", "return next(err, result)", "", "else if file.hasLayout()", "err = new Error(\"Could not find the specified layout: #{layoutSelector}\")", "return next(err, content)", "", "else", "return next(null, content)", "", ""],
+					"children" : [],
+					"comments" : [" Prepare", " Prepare event data", " Render via plugins", " Forward", " Chain", " Render Layouts", " next(err,result)"]
+				}, {
+					"id" : "G25",
+					"text" : "render",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["[opts,next] = extractOptsAndCallback(opts, next)", "file = @", "", "contentRenderedWithoutLayouts = null", "relativePath = file.get('relativePath')", "", "opts = extendr.clone(opts or {})", "opts.actions ?= ['renderExtensions', 'renderDocument', 'renderLayouts']", "if opts.apply?", "err = new Error(\"The `apply` option when rendering documents is now deprecated. Use `document.clone().action('render', ...)` instead\")", "return next(err)", "", "opts.content ?= file.get('body')", "", "opts.templateData = extendr.clone(opts.templateData or {})  # deepClone may be more suitable", "opts.templateData.document ?= file.toJSON()", "opts.templateData.documentModel ?= file", "", "for own key, value of opts.templateData", "if value?.bind is Function::bind  # we do this style of check, as underscore is a function that has it's own bind", "opts.templateData[key] = value.bind(opts.templateData)", "", "", "file.log 'debug', \"Rendering the file: #{relativePath}\"", "", "tasks = new TaskGroup \"render tasks for: #{relativePath}\", next:(err) ->", "if err", "file.log 'warn', \"Something went wrong while rendering: #{relativePath}\\n#{err.stack or err.message or err}\"", "return next(err, opts.content, file)", "", "contentRendered = opts.content", "contentRenderedWithoutLayouts ?= contentRendered", "rendered = true", "file.set({contentRendered, contentRenderedWithoutLayouts, rendered})", "", "file.log 'debug', \"Rendering completed for: #{relativePath}\"", "", "file.attributes.rtime = new Date()", "", "return next(null, opts.content, file)", "", "if 'renderExtensions' in opts.actions", "tasks.addTask \"renderExtensions: #{relativePath}\", (complete) ->", "file.renderExtensions opts, (err,result) ->", "return complete(err)  if err", "", "opts.content = result", "", "return complete()", "", "if 'renderDocument' in opts.actions", "tasks.addTask \"renderDocument: #{relativePath}\", (complete) ->", "file.renderDocument opts, (err,result) ->", "return complete(err)  if err", "", "opts.content = result", "contentRenderedWithoutLayouts = result", "", "return complete()", "", "if 'renderLayouts' in opts.actions", "tasks.addTask \"renderLayouts: #{relativePath}\", (complete) ->", "file.renderLayouts opts, (err,result) ->", "return complete(err)  if err", "", "opts.content = result", "", "return complete()", "", "tasks.run()", "", "@", "", "", ""],
+					"children" : [],
+					"comments" : [" Prepare", " Grab the layout", " Check", " We have a layout to render", " Assign the current rendering to the templateData.content", " Merge in the layout meta data into the document JSON", " and make the result available via documentMerged", " templateData.document.metaMerged = extendr.extend({}, layout.getMeta().toJSON(), file.getMeta().toJSON())", " Render the layout with the templateData", " We had a layout, but it is missing", " We never had a layout", " Render", " Render this file", " next(err,result,document)"]
+				}, {
+					"id" : "G26",
+					"text" : "writeSource",
+					"typ" : "method",
+					"icon" : "method",
+					"code" : ["[opts,next] = extractOptsAndCallback(opts, next)", "file = @", "", "opts.content ?= (@getContent() or '').toString('')", "", "CSON      = require('cson')  unless CSON", "metaData  = @getMeta().toJSON(true)", "delete metaData.writeSource", "content   = body = opts.content.replace(/^\\s+/,'')", "header    = CSON.stringifySync(metaData)", "if !header or header is '{}'", "source    = body", "else", "parser    = 'cson'", "seperator = '###'", "source    = \"#{seperator} #{parser}\\n#{header}\\n#{seperator}\\n\\n#{body}\"", "", "opts.content = source", "", "super(opts, next)", "", "@", "", ""],
+					"children" : [],
+					"comments" : [" Prepare", " Prepare variables", " Options", " Prepare content", " Prepare templateData", " Ensure template helpers are bound correctly", " Prepare result", " file.set({contentRendered:null, contentRenderedWithoutLayouts:null, rendered:false})", " Log", " Prepare the tasks", " Error?", " Attributes", " Log", " Apply", " Success", " ^ do not use super here, even with =>", " as it causes layout rendering to fail", " the reasoning for this is that super uses the document's contentRendered", " where, with layouts, opts.apply is false", " so that isn't set", " Render Extensions Task", " Check", " Apply the result", " Done", " Render Document Task", " Check", " Apply the result", " Done", " Render Layouts Task", " Check", " Apply the result", " Done", " Fire the tasks", " Chain", " ---------------------------------", " CRUD", " Write the file", " next(err)"]
+				}
+			],
+			"comments" : [" Optional", " Local", " ---------------------------------", " Document Model"]
+		}, {
+			"id" : "G27",
+			"text" : "DocumentModel",
+			"typ" : "module",
+			"icon" : "module",
+			"code" : [],
+			"children" : [],
+			"comments" : [" Prepare", " Fetch", " Adjust", " No meta data", " Has meta data", " Apply", " @set({parser,header,body,content,source})", " ^ commented out as we probably don't need to do this, it could be handled on the next load", " Write data", " Chain", " Export"]
+		}
+	]
+}

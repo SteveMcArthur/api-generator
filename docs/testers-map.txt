@@ -1,0 +1,305 @@
+0|comment|# Requires
+0|code|{extendOnClass} = require('extendonclass')
+0|code|pathUtil = require('path')
+0|code|safefs = require('safefs')
+0|code|balUtil = require('bal-util')
+0|code|extendr = require('extendr')
+0|code|joe = require('joe')
+0|code|{expect} = require('chai')
+0|code|CSON = require('cson')
+0|code|_ = require('lodash')
+0|code|DocPad = require('./docpad')
+0|empty|
+0|comment|# Prepare
+0|comment|# We want the plugn port to be a semi-random number above 2000
+0|code|pluginPort = 2000 + parseInt(String(Date.now()).substr(-6, 4))
+0|code|testers = {
+1|code|	CSON,
+1|code|	DocPad
+0|code|}
+0|empty|
+0|comment|# Plugin Tester
+0|code|testers.PluginTester =
+0|class|class PluginTester
+1|comment|	# Add support for PluginTester.extend(proto)
+1|code|	@extend: extendOnClass
+0|empty|
+1|comment|	# Plugin Config
+1|prop|	config:
+2|prop|		testerName: null
+2|prop|		pluginName: null
+2|prop|		pluginPath: null
+2|prop|		testPath: null
+2|prop|		outExpectedPath: null
+2|prop|		removeWhitespace: false
+2|prop|		contentRemoveRegex: null
+2|string|		autoExit: 'safe'
+0|empty|
+1|comment|	# DocPad Config
+1|prop|	docpadConfig:
+2|prop|		global: true
+2|prop|		port: null
+2|prop|		logLevel: (if ('-d' in process.argv) then 7 else 5)
+2|prop|		rootPath: null
+2|prop|		outPath: null
+2|prop|		srcPath: null
+2|prop|		pluginPaths: null
+2|prop|		enableUnlistedPlugins: true
+2|prop|		enabledPlugins: null
+2|prop|		skipUnsupportedPlugins: false
+2|prop|		catchExceptions: false
+2|prop|		environment: null
+0|empty|
+1|comment|	# DocPad Instance
+1|prop|	docpad: null
+0|empty|
+1|comment|	# Constructor
+1|prop|	constructor: (config={},docpadConfig={},next) ->
+2|comment|		# Apply Configuration
+2|code|		tester = @
+2|code|		@config = extendr.deepExtendPlainObjects({}, PluginTester::config, @config, config)
+2|code|		@docpadConfig = extendr.deepExtendPlainObjects({}, PluginTester::docpadConfig, @docpadConfig, docpadConfig)
+2|code|		@docpadConfig.port ?= ++pluginPort
+2|code|		@config.testerName ?= @config.pluginName
+0|empty|
+2|comment|		# Extend Configuration
+2|code|		@config.testPath or= pathUtil.join(@config.pluginPath, 'test')
+2|code|		@config.outExpectedPath or= pathUtil.join(@config.testPath, 'out-expected')
+0|empty|
+2|comment|		# Extend DocPad Configuration
+2|code|		@docpadConfig.rootPath or= @config.testPath
+2|code|		@docpadConfig.outPath or= pathUtil.join(@docpadConfig.rootPath, 'out')
+2|code|		@docpadConfig.srcPath or= pathUtil.join(@docpadConfig.rootPath, 'src')
+2|code|		@docpadConfig.pluginPaths ?= [@config.pluginPath]
+2|code|		defaultEnabledPlugins = {}
+2|code|		defaultEnabledPlugins[@config.pluginName] = true
+2|code|		@docpadConfig.enabledPlugins or= defaultEnabledPlugins
+0|empty|
+2|comment|		# Test API
+2|code|		joe.describe @config.testerName, (suite,task) ->
+3|code|			tester.describe = tester.suite = suite
+3|code|			tester.it = tester.test = task
+3|code|			tester.done = tester.exit = (next) ->
+4|code|				tester.docpad?.action('destroy', next)
+3|code|			next?(null, tester)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Get Tester Configuration
+1|method|	getConfig: ->
+2|code|		return @config
+0|empty|
+1|comment|	# Get Plugin Instance
+1|method|	getPlugin: ->
+2|code|		return @docpad.getPlugin(@getConfig().pluginName)
+0|empty|
+1|comment|	# Create DocPad Instance
+1|method|	testCreate: =>
+2|comment|		# Prepare
+2|code|		tester = @
+2|code|		docpadConfig = @docpadConfig
+0|empty|
+2|comment|		# Create Instance
+2|code|		@test "create", (done) ->
+3|code|			DocPad.createInstance docpadConfig, (err, docpad) ->
+4|code|				return done(err)  if err
+4|code|				tester.docpad = docpad
+0|empty|
+4|code|				# init docpad in case the plugin is starting from scratch
+4|code|				tester.docpad.action 'init', (err) ->
+5|code|					# ignore error as it is probably just related to there already being something
+0|empty|
+5|code|					# clean up the docpad out directory
+5|code|					tester.docpad.action 'clean', (err) ->
+5|code|						return done(err)  if err
+0|empty|
+5|code|						# install anything on the website that needs to be installed
+5|code|						tester.docpad.action('install', done)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Test Loaded
+1|method|	testLoad: =>
+2|comment|		# Prepare
+2|code|		tester = @
+0|empty|
+2|comment|		# Test
+2|code|		@test "load plugin #{tester.config.pluginName}", (done) ->
+3|code|			tester.docpad.loadedPlugin tester.config.pluginName, (err,loaded) ->
+4|code|				return done(err)  if err
+4|code|				expect(loaded).to.be.ok
+4|code|				return done()
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Perform Server
+1|method|	testServer: (next) =>
+2|comment|		# Prepare
+2|code|		tester = @
+0|empty|
+2|comment|		# Handle
+2|code|		@test "server", (done) ->
+3|code|			tester.docpad.action 'server', (err) ->
+4|code|				return done(err)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Test Generate
+1|method|	testGenerate: =>
+2|comment|		# Prepare
+2|code|		tester = @
+0|empty|
+2|comment|		# Test
+2|code|		@test "generate", (done) ->
+3|code|			tester.docpad.action 'generate', (err) ->
+4|code|				return done(err)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Test everything
+1|method|	testEverything: =>
+2|comment|		# Prepare
+2|code|		tester = @
+0|empty|
+2|comment|		# Tests
+2|code|		@testCreate()
+2|code|		@testLoad()
+2|code|		@testGenerate()
+2|code|		@testServer()
+2|code|		@testCustom?()
+0|empty|
+2|comment|		# Finish
+2|code|		@finish()
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+1|comment|	# Finish
+1|method|	finish: ->
+2|comment|		# Prepare
+2|code|		tester = @
+0|empty|
+2|comment|		# Finish
+2|code|		if tester.config.autoExit
+3|code|			@test 'finish up', (next) ->
+4|code|				tester.exit(next)
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+0|empty|
+0|comment|# Server Tester
+0|code|testers.ServerTester =
+0|class|class ServerTester extends PluginTester
+0|empty|
+0|empty|
+0|comment|# Renderer Tester
+0|code|testers.RendererTester =
+0|class|class RendererTester extends PluginTester
+1|comment|	# Test Generation
+1|method|	testGenerate: ->
+2|comment|		# Prepare
+2|code|		tester = @
+0|empty|
+2|comment|		# Test
+2|code|		@suite "generate", (suite,test) ->
+3|code|			test 'action', (done) ->
+4|code|				tester.docpad.action 'generate', (err) ->
+5|code|					return done(err)
+0|empty|
+3|code|			suite 'results', (suite,test,done) ->
+4|code|				# Get actual results
+4|code|				balUtil.scanlist tester.docpadConfig.outPath, (err,outResults) ->
+5|code|					return done(err)  if err
+0|empty|
+5|code|					# Get expected results
+5|code|					balUtil.scanlist tester.config.outExpectedPath, (err,outExpectedResults) ->
+5|code|						return done(err)  if err
+0|empty|
+5|code|						# Prepare
+5|code|						outResultsKeys = Object.keys(outResults)
+5|code|						outExpectedResultsKeys = Object.keys(outExpectedResults)
+0|empty|
+5|code|						# Check we have the same files
+5|code|						test 'same files', ->
+5|code|							outDifferenceKeys = _.difference(outResultsKeys, outExpectedResultsKeys)
+5|code|							expect(outDifferenceKeys).to.be.empty
+0|empty|
+5|code|						# Check the contents of those files match
+5|code|						outResultsKeys.forEach (key) ->
+5|code|							test "same file content for: #{key}", ->
+5|code|								# Fetch file value
+5|code|								actual = outResults[key]
+5|code|								expected = outExpectedResults[key]
+0|empty|
+5|code|								# Remove empty lines
+5|code|								if tester.config.removeWhitespace is true
+5|code|									replaceLinesRegex = /\s+/g
+5|code|									actual = actual.replace(replaceLinesRegex, '')
+5|code|									expected = expected.replace(replaceLinesRegex, '')
+0|empty|
+5|code|								# Content regex
+5|code|								if tester.config.contentRemoveRegex
+5|code|									actual = actual.replace(tester.config.contentRemoveRegex, '')
+5|code|									expected = expected.replace(tester.config.contentRemoveRegex, '')
+0|empty|
+5|code|								# Compare
+5|code|								try
+5|code|									expect(actual).to.eql(expected)
+5|code|								catch err
+5|code|									console.log '\nactual:'
+5|code|									console.log actual
+5|code|									console.log '\nexpected:'
+5|code|									console.log expected
+5|code|									console.log ''
+5|code|									throw err
+0|empty|
+5|code|						# Forward
+5|code|						done()
+0|empty|
+2|comment|		# Chain
+2|code|		@
+0|empty|
+0|comment|# Test a plugin
+0|comment|# test({pluginPath: String})
+0|code|testers.test =
+0|code|test = (testerConfig, docpadConfig) ->
+1|comment|	# Configure
+1|code|	testerConfig.testerClass ?= PluginTester
+1|code|	testerConfig.pluginPath = pathUtil.resolve(testerConfig.pluginPath)
+1|code|	testerConfig.pluginName ?= pathUtil.basename(testerConfig.pluginPath).replace('docpad-plugin-','')
+1|code|	testerConfig.testerPath ?= pathUtil.join('out', "#{testerConfig.pluginName}.tester.js")
+1|code|	testerConfig.testerPath = pathUtil.resolve(testerConfig.pluginPath, testerConfig.testerPath)  if testerConfig.testerPath
+0|empty|
+1|comment|	# Create tester
+1|code|	complete = ->
+2|comment|		# Accept string inputs for testerClass
+2|code|		testerConfig.testerClass = testers[testerConfig.testerClass]  if typeof testerConfig.testerClass is 'string'
+0|empty|
+2|comment|		# Create our tester
+2|code|		new testerConfig.testerClass testerConfig, docpadConfig, (err,testerInstance) ->
+3|code|			throw err  if err
+0|empty|
+3|code|			# Run the tests
+3|code|			testerInstance.testEverything()
+0|empty|
+1|comment|	# Load the tester file
+1|code|	if testerConfig.testerPath
+2|code|		safefs.exists testerConfig.testerPath, (exists) ->
+3|code|			testerConfig.testerClass = require(testerConfig.testerPath)(testers)  if exists
+3|code|			complete()
+0|empty|
+1|comment|	# User the default tester
+1|code|	else
+2|code|		complete()
+0|empty|
+1|comment|	# Chain
+1|code|	return testers
+0|empty|
+0|comment|# Export Testers
+0|module|module.exports = testers
